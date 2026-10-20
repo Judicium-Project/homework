@@ -1,0 +1,17 @@
+# Measurement tooling (Phase 2). Install: uv pip install --require-hashes -r requirements-tools.txt
+# Wheel hashes: agentdiff/dunnit (verified during tool selection); pyyaml/ast-grep from PyPI JSON (20.10.2026).
+# Platform coverage: macOS arm64 + manylinux x86_64; CPython 3.12 and 3.13 (pyyaml has per-version wheels).
+# ast-grep-cli wheels are py3-none (version independent): one macOS wheel (universal2/arm64) + one manylinux_2_28 x86_64.
+# agentdiff-cli / dunnit are pure Python (any platform). Other platforms (linux arm64, Windows, 3.14) need extra --hash lines.
+agentdiff-cli==0.1.4 \
+    --hash=sha256:5d5083d1e1dd8dfc431de182cbb180e94fabf6664166341e1b5128900aba6873
+dunnit==0.3.0 \
+    --hash=sha256:a2201d246197226d96173144eea541e169f10611d46b185d947ed7f91d667deb
+pyyaml==6.0.3 \
+    --hash=sha256:2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1 \
+    --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6 \
+    --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+ast-grep-cli==0.51.0 \
+    --hash=sha256:17f288ed74bf4e5cc8bfa7fda0e7d23f658cef2e7257216720df0ccb958be9d1 \
+    --hash=sha256:17007574681fe872473850780304b3df57ca98ac575d88957972fea8c3810c26

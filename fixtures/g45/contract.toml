@@ -1,0 +1,54 @@
+# DONDURULMUŞ sözleşme: task.md (gorev/G45 @5e22662, orijinal) metninden türetildi; fixture'dan sonra değiştirilmez.
+# Türetme: task.md'de açık "Dosyalar" bölümü yok. allowed_paths; "Yapılacak" maddelerinde geçen yerlerden
+# (contracts/, handler.go, goose migration, Composer/mesaj düzenleme, i18n, pnpm gen çıktısı) geniş glob'a çevrildi.
+# Migration dizini ve api-types çıktısı metinde adlandırılmaz; "services/chatapp/**" ve "packages/api-types/**" bu yüzden geniş tutuldu.
+# NOT: Düzeltme turu 1 (@3cd92dc) kabule `pnpm turbo run lint test build --force` ekler; bu orijinal task.md'de yok, sözleşmeye girmedi
+# (G45-3 ölçümü expected.yaml'da koşucu testi olarak tanımlı).
+version = 1
+task = "G45"
+source = "gorev/G45-mesaj-siniri-hata.md @5e2266252be97b62f173a5a23e670b45c5d6cfbb"
+
+allowed_paths = [
+  "contracts/**",
+  "services/chatapp/**",
+  "apps/web/src/**",
+  "packages/api-types/**",
+]
+# required_paths (K16): görevin DEĞİŞTİRİLMESİNİ şart koştuğu dosyalar; diff'te dokunulmayan -> bulgu.
+# task.md'de yalnız handler.go açıkça adlı ("Yapılacak" 1-7; "Kök neden" + madde 5/6'da Composer adı geçer, yol verilmez).
+# Migration/limits.tsp yolu metinde yok -> uydurulmadı, listeye girmedi. Dönüşte (Yapılacak 6) "Dosya olarak gönder" = Composer.tsx.
+required_paths = [
+  "services/chatapp/internal/message/handler.go",
+  "apps/web/src/features/chat/Composer.tsx",
+]
+allowed_dependencies = []        # task.md yeni bağımlılık izni vermez
+generated_by = "pnpm gen"        # "pnpm gen ... üretilen dosyalar" (Kabul 1); bu komutun çıktısı yol denetiminde üretilmiş sayılır
+
+acceptance = [
+  'pnpm gen',
+  'cd services/chatapp && go build ./... && go vet ./... && go test ./...',
+  'pnpm lint && pnpm test && pnpm build',
+  'node scripts/denetle-uyumluluk.mjs',
+]
+acceptance_manual = [
+  'git grep -n "4000" -- services apps contracts → yalnız tek kaynak + üretilen dosyalar + testler',
+  'Go: 4001 rune → 422 TOO_LONG max=4000 actual=4001; 4000 emoji → kabul',
+  'Migration up/down integration testi (-tags integration)',
+  'vitest: 5000 karakter yapıştır → değer kalır, sayaç kırmızı, gönder kapalı; dosya olarak gönder .txt File üretir; 422 alan hatası görünür',
+  'denetle-uyumluluk.mjs 0 ihlal',
+]
+
+[forbidden]
+paths = ["apps/web/e2e/**"]      # "e2e dosyalarını değiştirmek"
+paths_except = []
+patterns = [
+  { regex = 'text-transform:\s*uppercase', globs = ["**/*.css", "**/*.tsx", "**/*.ts"] },
+]
+notes = [
+  "Sınırı 4000'den yükseltmek (DB CHECK 16000 tavanı hariç; görev maddesi 2 ister)",
+  "Mevcut ErrorCode değerlerini değiştirmek",
+  "Sabit Türkçe metin (i18n anahtarı kullan)",
+  "git commit",
+]
+
+# Komutlar task.md "Kabul"ta yazıldığı gibi. Beklenti metni olan/komut olmayan maddeler acceptance_manual'da.

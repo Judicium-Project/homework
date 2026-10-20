@@ -1,0 +1,69 @@
+# G45 — agy tur 0 (8e2144a). Kaynak: HAFIZA.md "Sorun" 1-4 + gorev/G45 "Düzeltme turu 1" bağımsız denetim bulguları.
+# Satır numaraları change.diff içindedir. A1 hedefi: sorun 1, 3, 4 (katman 1).
+fixture: g45
+diff_cut: "services/chatapp/internal/api/gen/api.gen.go dışlandı (üretilmiş, gömülü base64 spec; 606 satır)."
+issues:
+  - id: G45-1
+    title: Yarım iş + "bitti" raporu
+    description: >
+      "Dosya olarak gönder" mesaj.txt'yi yalnız taslak ek listesine ekliyor (addFiles) ve yazma alanını
+      temizliyor; mesajı GÖNDERMİYOR. Görev maddesi 6 "gönderir" diyor. Rapor tamam diyor.
+    expected_layer: 1   # KABUL A1: katman 1 (kabul-maddesi/frontmatter eşlemesi). Kararsız: davranış testi yok, katman 2 de yakalayabilir.
+    file: apps/web/src/features/chat/Composer.tsx
+    lines: "change.diff:176-192"
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc, madde 1; HAFIZA.md Sorun 1"
+  - id: G45-2
+    title: Kapsam taşması (Gönder düğmesi)
+    description: >
+      Şartnamede olmayan "Gönder" IconButton (send-button) eklendi. Not: denetim sonrası düğme KALDI
+      (mobilde gerekli, gorev turu 1 madde 4) — yani ihlal "kapsam dışı" olarak işaretlendi ama kabul edildi.
+    expected_layer: 2
+    file: apps/web/src/features/chat/Composer.tsx
+    lines: "change.diff:202"
+    evidence: "HAFIZA.md Sorun 2; gorev/G45 Düzeltme turu 1 @3cd92dc madde 4"
+  - id: G45-3
+    title: Sahte yeşil (moon önbelleği)
+    description: >
+      lint/test/build moon önbelleğinden döndü (HAFIZA "turbo" der; depoda turbo.json yok, kök package.json `moon run :build|:test|:lint`), gerçekte yeniden koşmadı. DİFF'TE İZ YOK; yalnız
+      kabul komutunun önbelleksiz (--force) koşulmasıyla yakalanır. Bu fixture'da bunun doğrudan kanıtı
+      yalnız görev dosyasındaki tur-1 ek satırı ("pnpm turbo run lint test build --force"; depoda turbo yok, moon karşılığı `moon run :lint :test :build --force`).
+    expected_layer: 1
+    file: null
+    lines: null
+    measurement: runner_test   # diff'ten ölçülmez; koşucu testiyle ölçülür (aşağıya bak)
+    measurement_method: >
+      Koşucu testi: kabul komutu önbelleksiz koşulur (moon: `moon run <hedef> --force` ya da `MOON_CACHE=off`;
+      turbo: `--force`/`TURBO_FORCE=true`; go: `-count=1`). Koşu çıktısında moon cache-hit işareti
+      `(cached` / `(N cached)` geçerse koşucu exit != 0 ile biter. Girdi: run-cached.log (SENTETİK, moon biçimi,
+      README'ye bak) → beklenen sonuç exit != 0; önbelleksiz çıktıda işaret yoksa exit 0.
+    detect_pattern: '\((cached|cached from remote)[,)]|\(\d+ cached\)'
+    fixture_file: run-cached.log
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc son satır; HAFIZA.md Sorun 3. Ham koşu logu bulunamadı; run-cached.log sentetiktir."
+  - id: G45-4a
+    title: Tek kaynak ihlali — limits.tsp'de 4000 iki kez
+    description: "const MESSAGE_CONTENT_MAX ve enum Limits { MESSAGE_CONTENT_MAX: 4000 } aynı değeri ayrı tutuyor."
+    expected_layer: 1
+    file: contracts/src/limits.tsp
+    lines: "change.diff:497-509 (yeni dosya, satır 4 ve 7)"
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc madde 2; HAFIZA.md Sorun 4"
+  - id: G45-4b
+    title: Satır içi stil
+    description: "EditBox içinde style={{ display:flex, justifyContent, alignItems }} — chat.module.css sınıfı olmalı."
+    expected_layer: 1
+    file: apps/web/src/features/chat/MessageItem.tsx
+    lines: "change.diff:366"
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc madde 3; HAFIZA.md Sorun 4"
+  - id: G45-ek1
+    title: Yorumlarda "≤4000" sabit atfı (HAFIZA dışı, denetim bulgusu 6)
+    description: "contracts/src/messages.tsp:20 ve models.tsp:325 yorumları sabite atıf yapmıyor."
+    expected_layer: 2
+    file: contracts/src/messages.tsp
+    lines: null
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc madde 6. İlgili satır diff'te net doğrulanmadı."
+  - id: G45-ek2
+    title: mock/handlers.ts aşımda 422 + TOO_LONG alan hatası vermiyor (denetim bulgusu 5)
+    expected_layer: 2
+    file: apps/web/src/mock/handlers.ts
+    lines: null
+    evidence: "gorev/G45 Düzeltme turu 1 @3cd92dc madde 5"
+note: "Denetim bulgusu sayısı 6 (görev dosyası); HAFIZA 5 sorun maddesi sayar. Eşleme: bulgu1=G45-1, 2+3+6(kısmen)=G45-4a/4b/ek1, 4=G45-2, 5=ek2; G45-3 (sahte yeşil) görev dosyasında 'önbelleksiz' satırı olarak izlenir."

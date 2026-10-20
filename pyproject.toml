@@ -1,0 +1,60 @@
+[project]
+name = "homework"
+version = "0.1.0"
+description = "Deterministic verification of AI-agent code changes against a task contract"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Eirik Kaleid" }]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pyyaml>=6.0",
+    "jsonschema>=4.21",
+    # Pinned: rule behaviour (and silent parse failures) depends on the exact ast-grep build.
+    "ast-grep-cli==0.51.0",
+]
+
+[project.optional-dependencies]
+agentdiff = ["agentdiff-cli==0.1.4"]
+
+[project.scripts]
+homework = "homework.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
+    "types-jsonschema",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/homework"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+# Phase-2 measurement prototypes are kept verbatim as a record of how olcum.md was produced.
+extend-exclude = ["scripts/olcum", "docs", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: calls real model CLIs (codex, agy); skipped unless --live is given"]

@@ -1,0 +1,29 @@
+# G46 tur 1 — agy (e1e08b0), base 97d8078. Görev = G46 + Düzeltme turu 1. Kaynak: HAFIZA.md G46 tur 1 + gorev/G46 Düzeltme turu 2 @562d4da.
+fixture: g46-tur1
+diff_cut: "Kesim yok. UYARI: e1e08b0 commit mesajı package.json sırasının ELLE düzeltildiğini söylüyor; diff agy çıktısı + elle düzeltmenin karışımı. Saf agy diff'i git'te ayrı değil."
+issues:
+  - id: G46T1-1
+    title: Üretim koduna test kancası (window.__chatappMenu)
+    description: "Menu.tsx sonunda window.__chatappMenu = { openMenuAt, openMenu, hide } global'i; yalnız e2e için."
+    expected_layer: 1   # kural adayı: üretim kodunda window.__ test global yasak
+    file: apps/web/src/ui/Menu.tsx
+    lines: "change.diff:736"
+    evidence: "HAFIZA.md G46 tur 1; gorev/G46 Düzeltme turu 2 @562d4da madde 1"
+    detection_note: >
+      Kanca cast'li yazılmış: (window as unknown as { __chatappMenu?: ... }).__chatappMenu = {...}.
+      Düz metin `window.__` grep'i bunu KAÇIRIR (change.diff:736 satırında `window.` ile `__` bitişik değil).
+      ast-grep kuralı cast (as unknown as {...}) sonrası `__*` üye ataması / okumasını yakalamalı;
+      e2e tarafında aynı cast ile okuma da var (change.diff:95-96, 162-166).
+  - id: G46T1-2
+    title: e2e DOM'a kendi düğmesini enjekte ediyor
+    description: "konumlama.spec.ts document.createElement('button') + appendChild ile sahte tetikleyici; gerçek uygulama tetikleyicisi kullanılmıyor, kanca üzerinden openMenuAt çağrılıyor."
+    expected_layer: 1
+    file: apps/web/e2e/konumlama.spec.ts
+    lines: "change.diff:149-156 (createElement/appendChild), 95-96 ve 161-166 (kanca çağrısı)"
+    evidence: "HAFIZA.md G46 tur 1; gorev/G46 Düzeltme turu 2 @562d4da madde 1"
+note: >
+  Tur 3 bulgusu (konumlama.spec.ts isVisible ile sessiz atlama + testedCount>0 gevşek kontrol) tur 2 commit'ine (18050ed) aittir,
+  bu diff'te YOK; ayrı fixture yapılmadı (kapsam: G46-tur1). Ham fix-round: gorev/G46 Düzeltme turu 3 @fcbaf1b.
+  ÇIKARILAN BULGU (eski G46T1-3, package.json sırası): e1e08b0'daki package.json değişimi geliştiricinin elle geri düzeltmesidir
+  (sıra 83d974a düzenine geri dönüyor: workspace satırları başta, @floating-ui/react yalnız ekleme). Bu diff'ten agy hatası
+  ölçülemez. A1'in package.json koşulu g46/G46-2 ile ölçülür.

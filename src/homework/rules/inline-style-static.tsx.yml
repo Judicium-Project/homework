@@ -1,0 +1,27 @@
+id: inline-style-static
+language: tsx
+severity: error
+message: 'Move this static inline style into a class in the component''s CSS module.'
+
+rule:
+  kind: jsx_attribute
+  all:
+    - has:
+        kind: property_identifier
+        regex: '^style$'
+    - has:
+        kind: jsx_expression
+        has:
+          kind: object
+  not:
+    has:
+      stopBy: end
+      any:
+        - kind: spread_element
+        - kind: call_expression
+        - kind: template_string
+        - kind: member_expression
+        - kind: binary_expression
+        - kind: ternary_expression
+        - kind: identifier
+        - kind: shorthand_property_identifier

@@ -1,0 +1,5 @@
+# Temiz örnek (A2): G01 ErrorCode x-extensible-enum — agy yazdı, Claude denetledi, düzeltme turu GEREKMEDİ (tek commit e8c95a0).
+fixture: clean-1
+diff_cut: "services/chatapp/internal/api/gen/api.gen.go dışlandı (üretilmiş gömülü base64 OpenAPI spec; 306+/305-). Görev maddesi 3 'Go/TS'te anlamlı değişiklik olmamalı' diyor; bu gömülü spec yeniden üretimidir."
+issues: []
+note: "Seçim gerekçesi fixtures/README.md'de."

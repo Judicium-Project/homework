@@ -1,0 +1,28 @@
+diff --git a/contracts/out/openapi.yaml b/contracts/out/openapi.yaml
+index eb40ebd..03ead82 100644
+--- a/contracts/out/openapi.yaml
++++ b/contracts/out/openapi.yaml
+@@ -3097,6 +3097,7 @@ components:
+         - NOT_IMPLEMENTED
+         - UNAVAILABLE
+       description: Makine-okunur hata kodları. İstemci yalnız bu koda göre dallanır; `message` gösterim içindir.
++      x-extensible-enum: true
+     FieldError:
+       type: object
+       required:
+diff --git a/contracts/scripts/postprocess.mjs b/contracts/scripts/postprocess.mjs
+index 4400753..506713b 100644
+--- a/contracts/scripts/postprocess.mjs
++++ b/contracts/scripts/postprocess.mjs
+@@ -53,5 +53,11 @@ visit(doc, {
+   },
+ });
+ 
++// ErrorCode genişletilebilir enum: yeni hata kodları eklendiğinde oasdiff kırıcı değişiklik saymasın (K44).
++const errorCodePath = ["components", "schemas", "ErrorCode"];
++if (doc.getIn(errorCodePath)) {
++  doc.setIn([...errorCodePath, "x-extensible-enum"], true);
++}
++
+ await writeFile(outPath, doc.toString({ lineWidth: 0 }));
+ console.log(`postprocess: ${touched} enum adlandırıldı, ${ints} sayısal enum integer yapıldı`);

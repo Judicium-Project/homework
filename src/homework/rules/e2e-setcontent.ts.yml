@@ -1,0 +1,9 @@
+id: e2e-setcontent
+language: ts
+severity: error
+metadata:
+  scope: e2e
+message: 'Do not render hand-written HTML with setContent; navigate to the real application route (page.goto) instead.'
+
+rule:
+  pattern: $P.setContent($$$)

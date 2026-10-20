@@ -1,0 +1,394 @@
+diff --git a/apps/web/src/features/shell/Shell.tsx b/apps/web/src/features/shell/Shell.tsx
+index 142796f..b95da28 100644
+--- a/apps/web/src/features/shell/Shell.tsx
++++ b/apps/web/src/features/shell/Shell.tsx
+@@ -86,8 +86,8 @@ function ReadyShell() {
+ 
+   // Geniş: üye sütunu (tercih). Dar (≤ membersBreakpoint): yalnız istenince çekmece — içerik/kontrol çubuğu örtülmez.
+   const membersColumn = hasMemberPanel && !narrow && membersOpen;
+-  const showRightCol = !narrow && (inVoice || (membersColumn && hasMemberPanel));
+-  const membersDrawerOpen = (narrow && membersDrawer) || (narrow && !hasMemberPanel && inVoice && membersDrawer);
++  const showRightCol = !narrow && membersColumn && hasMemberPanel;
++  const membersDrawerOpen = narrow && membersDrawer && hasMemberPanel;
+   const navDrawerOpen = mobile && navOpen;
+   const closeNav = () => useUi.getState().setNavOpen(false);
+   const closeMembers = () => useUi.getState().setMembersDrawer(false);
+@@ -158,6 +158,7 @@ function ReadyShell() {
+         >
+           <div className={css.left}>
+             <ChannelColumn />
++            {inVoice && <VoiceCard />}
+             <UserBar />
+           </div>
+         </div>
+@@ -168,15 +169,13 @@ function ReadyShell() {
+         </main>
+         {showRightCol && (
+           <div className={css.rightCol}>
+-            {inVoice && <VoiceCard />}
+-            {membersColumn && guildId && <MemberPanel guildId={guildId} />}
++            {guildId && <MemberPanel guildId={guildId} />}
+           </div>
+         )}
+       </div>
+       {(navDrawerOpen || membersDrawerOpen) && <div className={css.scrim} aria-hidden="true" onClick={navDrawerOpen ? closeNav : closeMembers} />}
+       {membersDrawerOpen && (
+         <div ref={membersRef} id={MEMBERS_DRAWER_ID} className={css.membersDrawer} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t("members.title")}>
+-          {inVoice && <VoiceCard />}
+           {guildId && <MemberPanel guildId={guildId} />}
+         </div>
+       )}
+diff --git a/apps/web/src/features/shell/VoiceCard.test.tsx b/apps/web/src/features/shell/VoiceCard.test.tsx
+new file mode 100644
+index 0000000..c971b1b
+--- /dev/null
++++ b/apps/web/src/features/shell/VoiceCard.test.tsx
+@@ -0,0 +1,152 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { fireEvent, render, screen } from "@testing-library/react";
++import { MemoryRouter } from "react-router";
++import { useStore } from "../../store/index.ts";
++import { useVoice, voice } from "../../voice/index.ts";
++import { useRoom } from "../../voice/engine.ts";
++import { VoiceCard } from "./VoiceCard.tsx";
++
++describe("VoiceCard (G32 · Sol sütun ses kartı)", () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++    useVoice.setState({
++      status: "connected",
++      guildId: "g1",
++      channelId: "c1",
++      selfMute: false,
++      selfDeaf: false,
++      capabilities: { camera: true, screenShare: true, stats: true },
++      session: null,
++      pingMs: null,
++      error: null,
++    });
++    useRoom.setState({
++      permError: null,
++      streams: [],
++      participants: [
++        { userId: "u1", camSid: null, local: true, micOn: true, conn: "good" },
++        { userId: "u2", camSid: null, local: false, micOn: true, conn: "good" },
++      ],
++    });
++    useStore.setState({
++      me: {
++        id: "u1",
++        username: "testuser",
++        display_name: "Test User",
++        avatar_id: null,
++        banner_id: null,
++        about: null,
++        bot: false,
++        email: "test@example.com",
++        email_verified: true,
++        instance_admin: false,
++        date_of_birth: "2000-01-01",
++        locale: "tr",
++      },
++      guilds: {
++        g1: {
++          id: "g1",
++          name: "Deneme Sunucusu",
++          iconId: null,
++          ownerId: "u1",
++          systemChannelId: null,
++          defaultNotifications: 0,
++          memberCount: 2,
++          joinedAt: null,
++          roles: {},
++          members: {
++            u1: {
++              user: { id: "u1", username: "testuser", display_name: "Test User", avatar_id: null, banner_id: null, about: null, bot: false },
++              nick: "Test User",
++              avatar_id: null,
++              roles: [],
++              joined_at: "",
++              deaf: false,
++              mute: false,
++            },
++            u2: {
++              user: { id: "u2", username: "diger", display_name: "Diğer Kişi", avatar_id: null, banner_id: null, about: null, bot: false },
++              nick: "Diğer Kişi",
++              avatar_id: null,
++              roles: [],
++              joined_at: "",
++              deaf: false,
++              mute: false,
++            },
++          },
++          channels: {
++            c1: {
++              id: "c1",
++              guild_id: "g1",
++              type: 2,
++              name: "Sohbet Odası",
++              topic: null,
++              position: 0,
++              parent_id: null,
++              permission_overwrites: [],
++              bitrate: 64,
++              user_limit: null,
++              last_message_id: null,
++            },
++          },
++        },
++      },
++      voiceStates: {
++        g1: {
++          u1: { guild_id: "g1", channel_id: "c1", user_id: "u1", session_id: "s1", self_mute: false, self_deaf: false, mute: false, deaf: false, self_video: false, self_stream: false },
++          u2: { guild_id: "g1", channel_id: "c1", user_id: "u2", session_id: "s2", self_mute: false, self_deaf: false, mute: false, deaf: false, self_video: false, self_stream: false },
++        },
++      },
++    });
++  });
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it("ses bağlıyken kart 3 ikon düğmeyi aria-label ile içerir; katılımcı listesi yok; Ayrıl tıklanınca voice.leave çağrılır", () => {
++    const leaveSpy = vi.spyOn(voice, "leave").mockResolvedValue();
++
++    render(
++      <MemoryRouter>
++        <VoiceCard />
++      </MemoryRouter>,
++    );
++
++    // Kart görünür
++    expect(screen.getByTestId("voice-card")).toBeInTheDocument();
++
++    // Durum ve kanal adı
++    expect(screen.getByText("Ses bağlı")).toBeInTheDocument();
++    expect(screen.getByText("Sohbet Odası")).toBeInTheDocument();
++
++    // 3 ikon düğme aria-label ile var
++    const micBtn = screen.getByRole("button", { name: "Mikrofonu kapat" });
++    const shareBtn = screen.getByRole("button", { name: "Ekranı paylaş" });
++    const leaveBtn = screen.getByRole("button", { name: "Ayrıl" });
++
++    expect(micBtn).toBeInTheDocument();
++    expect(shareBtn).toBeInTheDocument();
++    expect(leaveBtn).toBeInTheDocument();
++
++    // Katılımcı listesi yok (kanal listesinde yer alır, kartta tekrarlanmaz)
++    expect(screen.queryByText("Diğer Kişi")).toBeNull();
++    expect(screen.queryByText("Test User")).toBeNull();
++
++    // Ayrıl tıklanınca voice.leave çağrılır
++    fireEvent.click(leaveBtn);
++    expect(leaveSpy).toHaveBeenCalledOnce();
++  });
++
++  it("ses bağlı değilken kart render edilmez", () => {
++    useVoice.setState({ status: "idle", channelId: null });
++
++    render(
++      <MemoryRouter>
++        <VoiceCard />
++      </MemoryRouter>,
++    );
++
++    expect(screen.queryByTestId("voice-card")).toBeNull();
++  });
++});
+diff --git a/apps/web/src/features/shell/VoiceCard.tsx b/apps/web/src/features/shell/VoiceCard.tsx
+index 56aa11c..f67d4ab 100644
+--- a/apps/web/src/features/shell/VoiceCard.tsx
++++ b/apps/web/src/features/shell/VoiceCard.tsx
+@@ -3,45 +3,27 @@ import { useNavigate } from "react-router";
+ import { Mic, MicOff, MonitorUp, PhoneOff, Volume2 } from "lucide-react";
+ import { t } from "../../i18n/index.ts";
+ import { channelPath } from "../../lib/nav.ts";
+-import { memberName } from "../../store/hooks.ts";
+ import { useStore } from "../../store/index.ts";
+-import { Avatar } from "../../ui/Avatar.tsx";
+-import { Button, IconButton } from "../../ui/Button.tsx";
++import { IconButton } from "../../ui/Button.tsx";
+ import { Icon } from "../../ui/Icon.tsx";
+ import { useRoom } from "../../voice/engine.ts";
+ import { useVoice, voice } from "../../voice/index.ts";
+ import { useRoomUi } from "../voice/roomUi.ts";
+-import { useSpeakingStore } from "./ChannelList.tsx";
+ import css from "./shell.module.css";
+ 
+ /**
+- * Sağ sütundaki yüzen ses kartı (K52, G29 Madde 4).
+- * Kullanıcı ses odasındaysa hep görünür: oda adı, katılımcılar, konuşan halkası, Mikrofon / Ekran / Ayrıl düğmeleri.
++ * Sol sütundaki ses kartı (G32, Discord mantığı).
++ * Kanal listesinin altında, UserBar'ın hemen üstünde sabit durur.
++ * Katılımcı listesi yoktur (kanal listesinde gösterilir).
++ * İkon düğmeler (Mikrofon, Ekran paylaş, Ayrıl) tek satırda ve min-width: 0 ile taşmaz.
+  */
+ export function VoiceCard() {
+   const nav = useNavigate();
+   const v = useVoice();
+   const room = useRoom();
+   const roomUi = useRoomUi();
+-  const me = useStore((s) => s.me);
+-  const meId = me?.id;
+   const inVoice = v.status === "connected" || v.status === "joining";
+   const channel = useStore((s) => (v.guildId && v.channelId ? s.guilds[v.guildId]?.channels[v.channelId] : undefined));
+-  const states = useStore((s) => (v.guildId ? s.voiceStates[v.guildId] : undefined));
+-  const members = useStore((s) => (v.guildId ? s.guilds[v.guildId]?.members : undefined));
+-  const speaking = useSpeakingStore((s) => s.ids);
+-
+-  const ids = useMemo(() => {
+-    if (!inVoice || !v.channelId) return [];
+-    const out: string[] = [];
+-    const add = (id: string) => !out.includes(id) && out.push(id);
+-    if (meId) add(meId);
+-    for (const st of Object.values(states ?? {})) {
+-      if (st.channel_id === v.channelId) add(st.user_id);
+-    }
+-    for (const p of room.participants) add(p.userId);
+-    return out;
+-  }, [inVoice, v.channelId, meId, states, room.participants]);
+ 
+   if (!inVoice || !v.channelId) return null;
+ 
+@@ -57,59 +39,42 @@ export function VoiceCard() {
+         className={css.voiceCardHead}
+         onClick={() => v.guildId && v.channelId && nav(channelPath(v.guildId, v.channelId))}
+       >
+-        <span className={css.voiceCardTitle}>
++        <span className={css.voiceCardStatus}>
+           <Icon icon={Volume2} size="sm" />
+-          <span>{channelName}</span>
++          <span>{t("voice.connected")}</span>
+         </span>
+-        <span className={css.live}>{t("voice.live")}</span>
++        <span className={css.voiceCardChannelName}>{channelName}</span>
+       </button>
+ 
+-      <div className={css.voiceCardUsers} aria-hidden="true">
+-        {ids.map((id) => {
+-          const m = members?.[id];
+-          const name = m ? memberName(m.user, m) : id === meId && me ? memberName(me) : id;
+-          const isSpeaking = speaking.has(id);
+-          const st = states?.[id];
+-          const isMuted = st?.self_mute || st?.mute;
+-          return (
+-            <div key={id} className={css.voiceCardUser} data-speaking={isSpeaking}>
+-              <Avatar name={name} avatarId={m?.user.avatar_id ?? (id === meId ? me?.avatar_id : null)} size="sm" speaking={isSpeaking} bg="bg-raised" />
+-              <span className={css.voiceCardUserName}>{name}</span>
+-              {isSpeaking && <span className={css.voiceCardSpeakingTag}>{t("voice.card.speaking")}</span>}
+-              {isMuted && !isSpeaking && <Icon icon={MicOff} size="sm" className={css.voiceCardMutedIcon} />}
+-            </div>
+-          );
+-        })}
+-      </div>
+-
+       <div className={css.voiceCardControls} role="toolbar" aria-label={t("voice.connected")}>
+-        <Button
+-          size="sm"
++        <IconButton
+           icon={v.selfMute ? MicOff : Mic}
+-          kind={v.selfMute || micDenied ? "danger" : "secondary"}
++          label={micLabel}
++          size="sm"
++          iconSize="sm"
++          danger={v.selfMute || micDenied}
+           aria-pressed={v.selfMute}
+           onClick={() => (micDenied ? roomUi.set({ permissionOpen: "microphone" }) : void voice.setSelfMute(!v.selfMute))}
+-        >
+-          {micLabel}
+-        </Button>
++        />
+         {v.capabilities.screenShare && (
+-          <Button
+-            size="sm"
++          <IconButton
+             icon={MonitorUp}
++            label={t("voice.bar.share")}
++            size="sm"
++            iconSize="sm"
+             aria-pressed={hasOwnStream}
++            className={hasOwnStream ? css.voiceCardStreamActive : undefined}
+             onClick={() => roomUi.set({ shareOpen: true })}
+-          >
+-            {t("voice.bar.share")}
+-          </Button>
++          />
+         )}
+-        <Button
+-          size="sm"
+-          kind="danger"
++        <IconButton
+           icon={PhoneOff}
++          label={t("voice.leave")}
++          size="sm"
++          iconSize="sm"
++          danger
+           onClick={() => void voice.leave()}
+-        >
+-          {t("voice.leave")}
+-        </Button>
++        />
+       </div>
+     </div>
+   );
+diff --git a/apps/web/src/features/shell/shell.module.css b/apps/web/src/features/shell/shell.module.css
+index 241640e..ae73b3f 100644
+--- a/apps/web/src/features/shell/shell.module.css
++++ b/apps/web/src/features/shell/shell.module.css
+@@ -156,33 +156,36 @@
+ .userNames strong { font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .userNames span { color: var(--hk-text-muted); font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 
+-/* ───────── Ses kartı (G29 Madde 4, sağ sütunda hep görünen) ───────── */
++/* ───────── Ses kartı (G32, sol sütun, Discord mantığı) ───────── */
+ .voiceCard {
+-  background: var(--hk-bg-raised); border-radius: var(--hk-radius-lg); padding: var(--hk-space-3);
+-  display: flex; flex-direction: column; gap: var(--hk-space-2); flex: none; overflow: hidden;
++  background: var(--hk-bg-raised); border-radius: var(--hk-radius-lg); padding: var(--hk-space-2) var(--hk-space-3);
++  display: flex; flex-direction: column; gap: var(--hk-space-1_5); flex: none; overflow: hidden; min-width: 0;
+   backdrop-filter: blur(var(--hk-surface-blur)); -webkit-backdrop-filter: blur(var(--hk-surface-blur));
+ }
+ .voiceCardHead {
+-  display: flex; align-items: center; justify-content: space-between; width: 100%;
++  display: flex; flex-direction: column; gap: var(--hk-space-0_5); width: 100%; min-width: 0;
+   padding: var(--hk-space-1); border-radius: var(--hk-radius-md); text-align: left; cursor: pointer;
+-  color: var(--hk-text-primary); font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-sm);
+ }
+ .voiceCardHead:hover { background: var(--hk-bg-hover); }
+-.voiceCardTitle { display: flex; align-items: center; gap: var(--hk-space-1_5); min-width: 0; }
+-.voiceCardTitle svg { color: var(--hk-voice-text); flex: none; }
+-.voiceCardTitle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+-.voiceCardUsers { display: flex; flex-direction: column; gap: var(--hk-space-1); max-height: 160px; overflow-y: auto; padding: 0 var(--hk-space-1); }
+-.voiceCardUser {
+-  display: flex; align-items: center; gap: var(--hk-space-2); height: var(--hk-size-row-voice-user);
+-  padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); color: var(--hk-text-secondary);
+-  font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); width: 100%;
++.voiceCardStatus {
++  display: flex; align-items: center; gap: var(--hk-space-1_5); min-width: 0;
++  color: var(--hk-voice-text); font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs);
++}
++.voiceCardStatus svg { color: var(--hk-voice-text); flex: none; }
++.voiceCardStatus span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
++.voiceCardChannelName {
++  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
++  color: var(--hk-text-primary); font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm);
++}
++.voiceCardControls {
++  display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: var(--hk-space-1); min-width: 0;
++}
++.voiceCardControls button {
++  flex: 0 0 var(--hk-size-control-sm); width: var(--hk-size-control-sm); height: var(--hk-size-control-sm); min-width: 0;
++}
++.voiceCardStreamActive {
++  background: var(--hk-accent-base) !important; color: var(--hk-accent-on) !important;
+ }
+-.voiceCardUser[data-speaking="true"] { color: var(--hk-text-primary); }
+-.voiceCardUserName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+-.voiceCardSpeakingTag { font-size: var(--hk-font-size-xs); color: var(--hk-voice-text); font-weight: var(--hk-font-weight-medium); }
+-.voiceCardMutedIcon { color: var(--hk-text-muted); }
+-.voiceCardControls { display: flex; gap: var(--hk-space-1_5); padding-top: var(--hk-space-1); }
+-.voiceCardControls > * { flex: 1; justify-content: center; }
+ 
+ /* ───────── Mobilde ince canlı bandı (G29 Madde 6) ───────── */
+ .voiceLiveStrip {

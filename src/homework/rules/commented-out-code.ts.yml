@@ -1,0 +1,7 @@
+id: commented-out-code
+language: ts
+severity: error
+message: 'Delete this commented-out code instead of leaving it in a comment.'
+rule:
+  kind: comment
+  regex: '^//\s*(?:(?:const|let|var)\s+[\w{\[]|import\s.+\sfrom\s|export\s+(?:default|const|function)\b|if\s*\(.*\)\s*\{?\s*$|for\s*\(|await\s+[\w.]+\(|return\s+.+;\s*$|[\w.$\]\)]+\(.*\)\s*;\s*$|[\w.$\]]+\s*[-+*/%&|]?=\s*(?:(?:await|new|typeof|void)\s+)?(?:[\w.$\[\]!]|\([^)]*\)|\{[^}]*\}|''[^'']*''|"[^"]*"|`[^`]*`)+(?:\s*(?:[-+*/%&|^<>=!?:]+|,)\s*(?:[\w.$\[\]!]|\([^)]*\)|\{[^}]*\}|''[^'']*''|"[^"]*"|`[^`]*`)+)*\s*;\s*$|</?[A-Z]\w*[\s/>])'

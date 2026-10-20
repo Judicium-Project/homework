@@ -1,0 +1,48 @@
+# G46 — agy tur 0 (eec883e), base 83d974a. Kaynak: HAFIZA.md G46 ek kanıt + gorev/G46 "Düzeltme turu 1" (4 denetim düzeltmesi başlıklı wip, 6 madde).
+fixture: g46
+diff_cut: "Kesim yok (tam diff, 1715 satır). pnpm-lock.yaml integrity hash'leri public paket özetidir, sır değil."
+issues:
+  - id: G46-1
+    title: Sahte e2e testi
+    description: >
+      konumlama.spec.ts gerçek uygulamaya gitmiyor: page.setContent ile el yazması HTML + CDN'den
+      @floating-ui (jsdelivr) + el yazması fallback. Test geçer ama hiçbir şey kanıtlamaz.
+    expected_layer: 1   # bekçi kural adayı: e2e'de setContent / harici URL yasak
+    file: apps/web/e2e/konumlama.spec.ts
+    lines: "change.diff:19 (setContent), 64-65 (CDN)"
+    evidence: "HAFIZA.md G46 (19.10) ek kanıt; gorev/G46 Düzeltme turu 1 @97d8078 madde 1"
+  - id: G46-2
+    title: package.json bağımlılık sırası keyfi değişti
+    description: >
+      @chatapp/api-types ve @chatapp/tokens satırları listenin başından alfabetik konuma taşındı;
+      izinli değişiklik yalnız @floating-ui/react satırı ekleme.
+    expected_layer: 1
+    file: apps/web/package.json
+    lines: "change.diff:174-195 (sıra değişimi ~189)"
+    evidence: "HAFIZA.md G46 tur 1 notu ('iki turda da'); gorev/G46 Düzeltme turu 1 @97d8078 madde 5"
+  - id: G46-3
+    title: SettingsLayer dirty/onSave hiçbir yerden verilmiyor
+    description: "Kirli-form kapanış koruması eklendi ama GuildSettings/ServerSettings/UserSettings bağlamıyor (ölü kod)."
+    expected_layer: 2
+    file: apps/web/src/features/settings/Layer.tsx
+    lines: "change.diff:680-722"
+    evidence: "gorev/G46 Düzeltme turu 1 @97d8078 madde 2"
+  - id: G46-4
+    title: MessageItem düzenleme alanı ham <textarea> (autoGrow/≥3 satır yok)
+    expected_layer: 2
+    file: apps/web/src/features/chat/MessageItem.tsx
+    lines: "change.diff:305-317"
+    evidence: "gorev/G46 Düzeltme turu 1 @97d8078 madde 3"
+  - id: G46-5
+    title: Menu.tsx statik satır içi stil
+    expected_layer: 1
+    file: apps/web/src/ui/Menu.tsx
+    lines: "change.diff:1205 (style={{), 1231"
+    evidence: "gorev/G46 Düzeltme turu 1 @97d8078 madde 4 (görevde 'Menu.tsx:210')"
+  - id: G46-ek
+    title: Sunucu açıklaması alanı autoGrow kontrolü eksik
+    expected_layer: 2
+    file: apps/web/src/features/settings/ServerSettings.tsx
+    lines: null
+    evidence: "gorev/G46 Düzeltme turu 1 @97d8078 madde 6; bu turun diff'inde ServerSettings.tsx YOK"
+note: "Bu turda window.__chatappMenu henüz YOK (tur 1'de çıktı) — g46-tur1'e bak."

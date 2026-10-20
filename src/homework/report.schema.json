@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/eirikaleid/homework/schemas/report.schema.json",
+  "title": "homework check report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool", "layer", "status", "base", "base_sha", "head", "contract", "task",
+               "summary", "adapters", "findings", "acceptance_runs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": { "name": { "const": "homework" }, "version": { "type": "string" } }
+    },
+    "layer": { "const": 1 },
+    "status": {
+      "enum": ["pass", "pass-partial", "fail"],
+      "description": "pass-partial = no findings, but acceptance commands were not run"
+    },
+    "base": { "type": "string" },
+    "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "description": "--base resolved to a commit id" },
+    "head": { "type": ["string", "null"], "description": "null = working tree" },
+    "contract": { "type": ["string", "null"] },
+    "task": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "warning", "info", "files_changed"],
+      "properties": {
+        "error": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 },
+        "files_changed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "detail"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "enum": ["ran", "skipped"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "acceptance_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "steps", "exit_code", "cache_hit"],
+        "properties": {
+          "command": { "type": "string" },
+          "exit_code": { "type": "integer" },
+          "cache_hit": { "type": "boolean" },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["argv", "cwd", "env", "exit_code"],
+              "properties": {
+                "argv": { "type": "array", "items": { "type": "string" } },
+                "cwd": { "type": "string" },
+                "env": { "type": "object", "additionalProperties": { "type": "string" } },
+                "exit_code": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "rule", "severity", "adapter", "file", "line", "message", "evidence", "layer"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F[0-9]{3,}$" },
+        "rule": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "adapter": { "type": "string" },
+        "file": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "evidence": { "type": ["string", "null"] },
+        "layer": { "const": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,183 @@
+/* ───────── Düğme (§6.1) ───────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--hk-space-1_5);
+  min-height: var(--hk-size-control-md); padding: 0 var(--hk-space-4);
+  border-radius: var(--hk-radius-md); font-weight: var(--hk-font-weight-semibold);
+  font-size: var(--hk-font-size-base); line-height: var(--hk-font-line-height-base);
+  transition: background-color var(--hk-motion-duration-fast) var(--hk-motion-easing-standard), color var(--hk-motion-duration-fast) var(--hk-motion-easing-standard);
+  white-space: nowrap; text-decoration: none; border: var(--hk-border-width) solid transparent;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible {
+  outline: var(--hk-ring-width) solid var(--hk-focus);
+  outline-offset: var(--hk-ring-offset);
+}
+.btn_sm { min-height: var(--hk-size-control-sm); padding: 0 var(--hk-space-3); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); }
+.btn_lg { min-height: var(--hk-size-control-lg); padding: 0 var(--hk-space-5); }
+.primary { background: var(--hk-accent-base); color: var(--hk-accent-on); }
+.primary:hover:not(:disabled) { background: var(--hk-accent-hover); }
+.primary:active:not(:disabled) { background: var(--hk-accent-pressed); }
+.secondary { background: var(--hk-bg-raised); border-color: var(--hk-border-default); color: var(--hk-text-primary); }
+.secondary:hover:not(:disabled) { background: var(--hk-bg-hover); }
+.secondary:active:not(:disabled) { background: var(--hk-bg-active); }
+.ghost { color: var(--hk-text-secondary); }
+.ghost:hover:not(:disabled) { background: var(--hk-bg-hover); color: var(--hk-text-primary); }
+.danger { background: var(--hk-danger-base); color: var(--hk-danger-on); }
+.danger:hover:not(:disabled) { background: var(--hk-danger-hover); }
+.voice { background: var(--hk-voice-base); color: var(--hk-voice-on); }
+.voice:hover:not(:disabled) { background: var(--hk-voice-hover); }
+.btn:disabled { background: var(--hk-bg-hover); color: var(--hk-text-disabled); border-color: transparent; }
+.btn[aria-busy="true"] { color: var(--hk-text-muted); background: var(--hk-bg-hover); }
+.full { width: 100%; }
+.iconBtn { width: var(--hk-size-control-md); padding: 0; }
+.iconBtn.btn_sm { width: var(--hk-size-control-sm); }
+.iconBtn.btn_lg { width: var(--hk-size-control-lg); }
+.round { border-radius: var(--hk-radius-full); }
+.iconDanger { color: var(--hk-danger-text); }
+
+/* ───────── Giriş alanı (§6.2) ───────── */
+.field { display: flex; flex-direction: column; gap: var(--hk-space-1_5); min-width: 0; }
+.label { font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-medium); color: var(--hk-text-secondary); }
+.input {
+  width: 100%; min-height: var(--hk-size-control-md); padding: 0 var(--hk-space-3);
+  background: var(--hk-bg-inset); border: var(--hk-border-width) solid var(--hk-border-input); border-radius: var(--hk-radius-md);
+  color: var(--hk-text-primary); font-size: var(--hk-font-size-base);
+}
+.input_lg { min-height: var(--hk-size-control-lg); }
+textarea.input { padding: var(--hk-space-2) var(--hk-space-3); resize: vertical; min-height: var(--hk-size-control-lg); }
+.input[aria-invalid="true"] { border-color: var(--hk-danger-base); }
+.input:disabled { color: var(--hk-text-disabled); }
+.help { font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); color: var(--hk-text-muted); }
+.error { display: flex; align-items: center; gap: var(--hk-space-1_5); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); color: var(--hk-danger-text); }
+.ok { color: var(--hk-success-text); }
+
+/* ───────── Onay kutusu / anahtar (§6.3) ───────── */
+.check { position: relative; display: inline-flex; align-items: flex-start; gap: var(--hk-space-2); cursor: pointer; font-size: var(--hk-font-size-base); }
+.check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.box {
+  flex: none; width: var(--hk-size-checkbox); height: var(--hk-size-checkbox); border-radius: var(--hk-radius-xs);
+  border: var(--hk-border-width) solid var(--hk-border-input); display: inline-flex; align-items: center; justify-content: center; color: var(--hk-accent-on);
+}
+.check input:checked + .box { background: var(--hk-accent-base); border-color: var(--hk-accent-base); }
+.check input:focus-visible + .box { outline: var(--hk-ring-width) solid var(--hk-focus); outline-offset: var(--hk-ring-offset); }
+.switch {
+  position: relative; flex: none; width: var(--hk-size-switch-width); height: var(--hk-size-switch-height); border-radius: var(--hk-radius-full);
+  background: var(--hk-bg-active); border: var(--hk-border-width) solid var(--hk-border-strong);
+  transition: background-color var(--hk-motion-duration-fast) var(--hk-motion-easing-standard);
+}
+.switch::after {
+  content: ""; position: absolute; top: 50%; left: var(--hk-space-0_5); width: var(--hk-size-switch-thumb); height: var(--hk-size-switch-thumb);
+  margin-top: calc(var(--hk-size-switch-thumb) / -2); border-radius: var(--hk-radius-full); background: var(--hk-text-secondary);
+  transition: transform var(--hk-motion-duration-fast) var(--hk-motion-easing-standard);
+}
+.switch[aria-checked="true"] { background: var(--hk-accent-base); border-color: var(--hk-accent-base); }
+.switch[aria-checked="true"]::after { background: var(--hk-accent-on); transform: translateX(calc(var(--hk-size-switch-width) - var(--hk-size-switch-thumb) - var(--hk-space-1) - var(--hk-space-0_5))); }
+.switch:disabled { opacity: 0.5; }
+
+/* ───────── Avatar / durum ───────── */
+.avatarWrap { position: relative; flex: none; display: inline-flex; border-radius: var(--hk-radius-full); }
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center; border-radius: var(--hk-radius-full); overflow: hidden;
+  background: var(--hk-bg-active); color: var(--hk-text-primary); font-weight: var(--hk-font-weight-semibold); user-select: none;
+}
+.av_xs { width: var(--hk-size-avatar-xs); height: var(--hk-size-avatar-xs); font-size: var(--hk-font-size-xs); }
+.av_sm { width: var(--hk-size-avatar-sm); height: var(--hk-size-avatar-sm); font-size: var(--hk-font-size-xs); }
+.av_md { width: var(--hk-size-avatar-md); height: var(--hk-size-avatar-md); font-size: var(--hk-font-size-sm); }
+.av_lg { width: var(--hk-size-avatar-lg); height: var(--hk-size-avatar-lg); font-size: var(--hk-font-size-base); }
+.av_xl { width: var(--hk-size-avatar-xl); height: var(--hk-size-avatar-xl); font-size: var(--hk-font-size-2xl); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.speaking { box-shadow: 0 0 0 var(--hk-ring-speaking-offset) var(--ring-bg, var(--hk-bg-surface)), 0 0 0 calc(var(--hk-ring-speaking-offset) + var(--hk-ring-speaking-width)) var(--hk-voice-speaking); }
+.presence {
+  position: absolute; right: 0; bottom: 0; width: var(--hk-size-presence-dot); height: var(--hk-size-presence-dot); border-radius: var(--hk-radius-full);
+  box-shadow: 0 0 0 var(--hk-space-0_5) var(--dot-bg, var(--hk-bg-surface)); display: block;
+}
+.presence svg { display: block; width: 100%; height: 100%; }
+.p_online { color: var(--hk-presence-online); }
+.p_idle { color: var(--hk-presence-idle); }
+.p_dnd { color: var(--hk-presence-dnd); }
+.p_offline { color: var(--hk-presence-offline); }
+
+/* ───────── Modal (§6.5) ───────── */
+.scrim {
+  position: fixed; inset: 0; z-index: var(--hk-z-modal);
+  background: var(--hk-bg-scrim);
+  animation: fadeIn var(--hk-motion-duration-normal) var(--hk-motion-easing-enter);
+}
+.modal {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: var(--hk-z-modal); background: var(--hk-bg-raised);
+  border: var(--hk-border-width) solid var(--hk-border-subtle);
+  border-radius: var(--hk-radius-lg); box-shadow: var(--hk-shadow-overlay);
+  padding: var(--hk-space-6);
+  width: calc(100% - var(--hk-space-8)); max-height: calc(100vh - var(--hk-space-8));
+  overflow: auto; display: flex; flex-direction: column; gap: var(--hk-space-4);
+  animation: pop var(--hk-motion-duration-normal) var(--hk-motion-easing-enter);
+}
+.m_sm { max-width: var(--hk-layout-modal-sm); }
+.m_md { max-width: var(--hk-layout-modal-md); }
+.m_lg { max-width: var(--hk-layout-modal-lg); }
+.modalTitle { font-size: var(--hk-font-size-xl); line-height: var(--hk-font-line-height-xl); font-weight: var(--hk-font-weight-semibold); letter-spacing: var(--hk-font-tracking-tight); padding-right: var(--hk-space-8); }
+.modalDesc { color: var(--hk-text-secondary); }
+.modalClose { position: absolute; top: var(--hk-space-3); right: var(--hk-space-3); }
+.modalActions { display: flex; justify-content: flex-end; gap: var(--hk-space-2); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ───────── Menü (§6.4) ───────── */
+.menu {
+  z-index: var(--hk-z-dropdown); min-width: var(--hk-layout-menu-min); background: var(--hk-bg-overlay); border-radius: var(--hk-radius-lg);
+  box-shadow: var(--hk-shadow-overlay); padding: var(--hk-space-1_5); display: flex; flex-direction: column;
+  animation: slideIn var(--hk-motion-duration-normal) var(--hk-motion-easing-enter);
+  outline: none;
+}
+.menuItem {
+  display: flex; align-items: center; gap: var(--hk-space-2); min-height: var(--hk-size-row-menu-item); padding: 0 var(--hk-space-3); border-radius: var(--hk-radius-md);
+  color: var(--hk-text-secondary); font-weight: var(--hk-font-weight-medium); text-align: left; width: 100%;
+  cursor: pointer; user-select: none; outline: none;
+}
+.menuItem:hover, .menuItem:focus-visible, .menuItem[data-highlighted], .menuItem[data-active="true"] { background: var(--hk-bg-active); color: var(--hk-text-primary); outline: none; }
+.menuItem:disabled, .menuItem[data-disabled] { color: var(--hk-text-disabled); background: none; cursor: default; }
+.menuDanger { color: var(--hk-danger-text); }
+.menuDanger:hover, .menuDanger:focus-visible, .menuDanger[data-highlighted] { background: var(--hk-danger-base); color: var(--hk-danger-on); }
+.menuShortcut { margin-left: auto; font-size: var(--hk-font-size-xs); color: var(--hk-text-muted); }
+.menuSep { height: var(--hk-border-width); background: var(--hk-border-subtle); margin: var(--hk-space-1) 0; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(var(--hk-space-1)); } to { opacity: 1; transform: translateY(0); } }
+
+/* ───────── İpucu (§6.7) / Toast (§6.6) ───────── */
+.tooltip {
+  z-index: var(--hk-z-tooltip); background: var(--hk-bg-overlay); color: var(--hk-text-primary); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm);
+  padding: var(--hk-space-1) var(--hk-space-2); border-radius: var(--hk-radius-sm); box-shadow: var(--hk-shadow-toast); pointer-events: none; max-width: var(--hk-layout-toast-max);
+  animation: fadeIn var(--hk-motion-duration-fast) var(--hk-motion-easing-enter);
+}
+.toasts { position: fixed; z-index: var(--hk-z-toast); bottom: var(--hk-space-6); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: var(--hk-space-2); align-items: center; }
+.toast {
+  display: flex; align-items: center; gap: var(--hk-space-2); background: var(--hk-bg-overlay); border-radius: var(--hk-radius-lg); box-shadow: var(--hk-shadow-toast);
+  padding: var(--hk-space-3) var(--hk-space-4); max-width: var(--hk-layout-toast-max); animation: slideIn var(--hk-motion-duration-normal) var(--hk-motion-easing-enter);
+}
+.t_success { color: var(--hk-success-text); }
+.t_error { color: var(--hk-danger-text); }
+.t_info { color: var(--hk-text-secondary); }
+
+/* ───────── Durum kalıpları (§6.18) ───────── */
+.skeleton { background: var(--hk-bg-skeleton); border-radius: var(--hk-radius-sm); }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--hk-space-3); text-align: center; margin: auto; max-width: var(--hk-layout-empty-max); padding: var(--hk-space-6); color: var(--hk-text-secondary); }
+.empty > svg { box-sizing: content-box; padding: var(--hk-space-3); border-radius: var(--hk-radius-full); background: var(--hk-bg-inset); color: var(--hk-text-muted); }
+.errorCard { display: flex; align-items: flex-start; gap: var(--hk-space-3); background: var(--hk-danger-subtle); border: var(--hk-border-width) solid color-mix(in srgb, var(--hk-danger-base) 25%, transparent); border-radius: var(--hk-radius-lg); padding: var(--hk-space-4); }
+.errorCard svg { color: var(--hk-danger-text); flex: none; }
+.errorBody { display: flex; flex-direction: column; gap: var(--hk-space-2); align-items: flex-start; }
+.lockCard { display: flex; flex-direction: column; align-items: center; gap: var(--hk-space-3); background: var(--hk-bg-raised); border: var(--hk-border-width) solid var(--hk-border-subtle); border-radius: var(--hk-radius-lg); padding: var(--hk-space-6); margin: auto; }
+
+/* ───────── Sekme (§6.13) ───────── */
+.tabs { display: flex; gap: var(--hk-space-1); flex-wrap: wrap; }
+.tab { min-height: var(--hk-size-control-sm); padding: 0 var(--hk-space-4); border-radius: var(--hk-radius-md); font-weight: var(--hk-font-weight-medium); color: var(--hk-text-muted); }
+.tab:hover { background: var(--hk-bg-hover); color: var(--hk-text-primary); }
+.tab[aria-selected="true"] { background: var(--hk-text-primary); color: var(--hk-bg-base); }
+
+.brandMark { display: inline-block; background: var(--hk-accent-base); -webkit-mask: var(--brand-logo) center / contain no-repeat; mask: var(--brand-logo) center / contain no-repeat; }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: var(--hk-size-badge-min); height: var(--hk-size-badge-min); padding: 0 var(--hk-space-1);
+  border-radius: var(--hk-radius-full); background: var(--hk-accent-base); color: var(--hk-accent-on); font-size: var(--hk-font-size-xs); font-weight: var(--hk-font-weight-bold); font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,753 @@
+diff --git a/apps/web/e2e/konumlama.spec.ts b/apps/web/e2e/konumlama.spec.ts
+index 9635314..6f56f04 100644
+--- a/apps/web/e2e/konumlama.spec.ts
++++ b/apps/web/e2e/konumlama.spec.ts
+@@ -1,5 +1,7 @@
+ import { test, expect } from "@playwright/test";
+ 
++const BASE = process.env.E2E_URL ?? "http://localhost:5410";
++
+ const VIEWPORTS = [
+   { name: "390x844 (mobil)", width: 390, height: 844 },
+   { name: "1280x800 (masaüstü)", width: 1280, height: 800 },
+@@ -9,137 +11,65 @@ for (const vp of VIEWPORTS) {
+   test(`Menu konumlama: ${vp.name} ekranın 4 köşesinde getBoundingClientRect görünür alanda`, async ({ page }) => {
+     await page.setViewportSize({ width: vp.width, height: vp.height });
+ 
+-    // Floating UI mantığını test eden bağımsız birim sayfası
+-    await page.setContent(`
+-      <!DOCTYPE html>
+-      <html lang="tr">
+-        <head>
+-          <meta charset="utf-8" />
+-          <meta name="viewport" content="width=device-width, initial-scale=1" />
+-          <title>Konumlama Testi</title>
+-          <style>
+-            * { box-sizing: border-box; margin: 0; padding: 0; }
+-            body { width: ${vp.width}px; height: ${vp.height}px; overflow: hidden; position: relative; font-family: sans-serif; }
+-            .btn {
+-              position: absolute;
+-              padding: 8px 12px;
+-              background: #333;
+-              color: #fff;
+-              border: none;
+-              border-radius: 4px;
+-              cursor: pointer;
+-            }
+-            #btn-top-left { top: 10px; left: 10px; }
+-            #btn-top-right { top: 10px; right: 10px; }
+-            #btn-bottom-left { bottom: 10px; left: 10px; }
+-            #btn-bottom-right { bottom: 10px; right: 10px; }
+-
+-            .menu {
+-              position: fixed;
+-              background: #222;
+-              color: #fff;
+-              border: 1px solid #444;
+-              border-radius: 6px;
+-              padding: 8px;
+-              min-width: 180px;
+-              display: flex;
+-              flex-direction: column;
+-              gap: 4px;
+-              z-index: 1000;
+-              overflow-y: auto;
+-            }
+-            .item {
+-              padding: 6px 12px;
+-              background: #333;
+-              border-radius: 4px;
+-              white-space: nowrap;
+-            }
+-          </style>
+-          <script src="https://cdn.jsdelivr.net/npm/@floating-ui/core@1.6.8"></script>
+-          <script src="https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.6.12"></script>
+-        </head>
+-        <body>
+-          <button id="btn-top-left" class="btn">Sol Üst</button>
+-          <button id="btn-top-right" class="btn">Sağ Üst</button>
+-          <button id="btn-bottom-left" class="btn">Sol Alt</button>
+-          <button id="btn-bottom-right" class="btn">Sağ Alt</button>
+-          <div id="test-menu" class="menu" style="display: none;">
+-            <div class="item">Öğe 1</div>
+-            <div class="item">Öğe 2</div>
+-            <div class="item">Öğe 3</div>
+-            <div class="item">Öğe 4</div>
+-            <div class="item">Öğe 5</div>
+-          </div>
+-
+-          <script>
+-            const menu = document.getElementById("test-menu");
++    // Gerçek uygulamayı aç
++    await page.goto(BASE);
+ 
+-            function positionMenu(referenceEl) {
+-              const compute = window.FloatingUIDOM ? window.FloatingUIDOM.computePosition : null;
+-              if (!compute) {
+-                // CDN yoksa yerel matematiksel fallback (flip + shift + size)
+-                const r = referenceEl.getBoundingClientRect();
+-                const menuW = 180;
+-                const menuH = 160;
+-                let top = r.bottom + 4;
+-                let left = r.left;
++    // Menü köprüsünün ve DOM'un hazır olmasını bekle
++    await page.waitForFunction(() => {
++      const w = window as unknown as { __chatappMenu?: { openMenuAt?: unknown } };
++      return typeof w.__chatappMenu?.openMenuAt === "function";
++    }, { timeout: 15_000 });
+ 
+-                if (top + menuH > window.innerHeight - 8) {
+-                  top = Math.max(8, r.top - menuH - 4);
+-                }
+-                if (left + menuW > window.innerWidth - 8) {
+-                  left = Math.max(8, window.innerWidth - menuW - 8);
+-                }
+-                menu.style.left = left + "px";
+-                menu.style.top = top + "px";
+-                menu.style.maxWidth = (window.innerWidth - 16) + "px";
+-                menu.style.maxHeight = (window.innerHeight - 16) + "px";
+-                menu.style.display = "flex";
+-                return;
+-              }
++    const corners = [
++      { name: "sol-ust", x: 10, y: 10 },
++      { name: "sag-ust", x: vp.width - 50, y: 10 },
++      { name: "sol-alt", x: 10, y: vp.height - 40 },
++      { name: "sag-alt", x: vp.width - 50, y: vp.height - 40 },
++    ];
+ 
+-              const { flip, shift, size, offset } = window.FloatingUIDOM;
+-              compute(referenceEl, menu, {
+-                placement: "bottom-start",
+-                strategy: "fixed",
+-                middleware: [
+-                  offset(4),
+-                  flip({ padding: 8 }),
+-                  shift({ padding: 8 }),
+-                  size({
+-                    padding: 8,
+-                    apply({ availableWidth, availableHeight, elements }) {
+-                      Object.assign(elements.floating.style, {
+-                        maxWidth: Math.max(0, Math.floor(availableWidth)) + "px",
+-                        maxHeight: Math.max(0, Math.floor(availableHeight)) + "px",
+-                      });
+-                    },
+-                  }),
+-                ],
+-              }).then(({ x, y }) => {
+-                menu.style.left = x + "px";
+-                menu.style.top = y + "px";
+-                menu.style.display = "flex";
+-              });
+-            }
++    for (const corner of corners) {
++      // Dört köşeye yakın gerçek tetikleyici düğme oluştur
++      await page.evaluate(
++        ({ id, x, y }) => {
++          let btn = document.getElementById(id);
++          if (!btn) {
++            btn = document.createElement("button");
++            btn.id = id;
++            btn.textContent = id;
++            btn.style.position = "fixed";
++            btn.style.width = "40px";
++            btn.style.height = "30px";
++            btn.style.zIndex = "99999";
++            document.body.appendChild(btn);
++          }
++          btn.style.left = `${x}px`;
++          btn.style.top = `${y}px`;
++          btn.onclick = () => {
++            const w = window as unknown as {
++              __chatappMenu: {
++                openMenuAt: (el: HTMLElement, items: unknown[]) => void;
++              };
++            };
++            w.__chatappMenu.openMenuAt(btn!, [
++              { label: "Öğe 1 (Uzun Seçenek Adı)", onSelect: () => {} },
++              { label: "Öğe 2", onSelect: () => {} },
++              { label: "Öğe 3", onSelect: () => {} },
++              { label: "Öğe 4 (Son İşlem)", onSelect: () => {} },
++            ]);
++          };
++        },
++        { id: `trig-${corner.name}`, x: corner.x, y: corner.y },
++      );
+ 
+-            document.querySelectorAll(".btn").forEach((btn) => {
+-              btn.addEventListener("click", () => positionMenu(btn));
+-            });
+-          </script>
+-        </body>
+-      </html>
+-    `);
++      // Tetikleyiciye tıkla
++      await page.locator(`#trig-${corner.name}`).click();
+ 
+-    const buttons = ["#btn-top-left", "#btn-top-right", "#btn-bottom-left", "#btn-bottom-right"];
++      // Menünün açılmasını bekle
++      const menu = page.getByRole("menu");
++      await expect(menu).toBeVisible();
+ 
+-    for (const btnSelector of buttons) {
+-      await page.click(btnSelector);
+-      await page.waitForSelector("#test-menu", { state: "visible" });
+-
+-      const rect = await page.evaluate(() => {
+-        const el = document.getElementById("test-menu");
+-        if (!el) return null;
++      // getBoundingClientRect ile tam görünür alanda olduğunu doğrula
++      const rect = await menu.evaluate((el) => {
+         const r = el.getBoundingClientRect();
+         return {
+           left: r.left,
+@@ -151,14 +81,19 @@ for (const vp of VIEWPORTS) {
+         };
+       });
+ 
+-      expect(rect).not.toBeNull();
+-      if (!rect) continue;
++      // Menü genişliği ve yüksekliği pozitif olmalı
++      expect(rect.width).toBeGreaterThan(50);
++      expect(rect.height).toBeGreaterThan(40);
+ 
+-      // Tamamı görünür alanda olmalı (padding payı: 0px veya daha büyük)
++      // Ekran sınırları içinde kalmalı (taşma yok, 1px yuvarlama payı)
+       expect(rect.left).toBeGreaterThanOrEqual(0);
+       expect(rect.top).toBeGreaterThanOrEqual(0);
+-      expect(rect.right).toBeLessThanOrEqual(vp.width);
+-      expect(rect.bottom).toBeLessThanOrEqual(vp.height);
++      expect(rect.right).toBeLessThanOrEqual(vp.width + 1);
++      expect(rect.bottom).toBeLessThanOrEqual(vp.height + 1);
++
++      // Esc tuşu ile kapat
++      await page.keyboard.press("Escape");
++      await expect(menu).toBeHidden();
+     }
+   });
+ }
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 4fd08f2..e07f1f7 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -21,6 +21,8 @@
+     "e2e:hesap": "playwright test hesap.spec.ts"
+   },
+   "dependencies": {
++    "@chatapp/api-types": "workspace:*",
++    "@chatapp/tokens": "workspace:*",
+     "@floating-ui/react": "^0.27.20",
+     "@radix-ui/react-dialog": "^1.3.1",
+     "@radix-ui/react-dropdown-menu": "^2.2.1",
+@@ -28,8 +30,6 @@
+     "@radix-ui/react-tooltip": "^1.4.1",
+     "@tanstack/react-query": "5.104.1",
+     "@tanstack/react-virtual": "3.14.15",
+-    "@chatapp/api-types": "workspace:*",
+-    "@chatapp/tokens": "workspace:*",
+     "livekit-client": "2.22.4",
+     "lucide-react": "1.55.0",
+     "react": "19.3.0",
+diff --git a/apps/web/src/features/chat/MessageItem.tsx b/apps/web/src/features/chat/MessageItem.tsx
+index e7c0458..76629ad 100644
+--- a/apps/web/src/features/chat/MessageItem.tsx
++++ b/apps/web/src/features/chat/MessageItem.tsx
+@@ -16,6 +16,7 @@ import { useUi } from "../../store/ui.ts";
+ import { Avatar } from "../../ui/Avatar.tsx";
+ import { Badge } from "../../ui/Badge.tsx";
+ import { IconButton } from "../../ui/Button.tsx";
++import { TextArea } from "../../ui/Form.tsx";
+ import { Icon } from "../../ui/Icon.tsx";
+ import { openMenu, openMenuAt } from "../../ui/Menu.tsx";
+ import { toast } from "../../ui/Toast.tsx";
+@@ -259,11 +260,12 @@ function EditBox({ m }: { m: TimelineMessage }) {
+   };
+   return (
+     <div className={css.editBox}>
+-      <textarea
++      <TextArea
+         ref={ref}
++        autoGrow
++        rows={3}
+         className={css.editArea}
+         value={text}
+-        rows={Math.max(3, Math.min(8, text.split("\n").length))}
+         disabled={busy}
+         aria-label={t("msg.edit")}
+         onChange={(e) => {
+diff --git a/apps/web/src/features/settings/GuildSettings.test.tsx b/apps/web/src/features/settings/GuildSettings.test.tsx
+index 6b77ddd..5ffce0a 100644
+--- a/apps/web/src/features/settings/GuildSettings.test.tsx
++++ b/apps/web/src/features/settings/GuildSettings.test.tsx
+@@ -148,4 +148,36 @@ describe("GuildSettings › Roller Bölümü", () => {
+     expect(screen.getByRole("tab", { name: "İzinler" })).toBeInTheDocument();
+     expect(screen.getByText("Kanalı gör")).toBeInTheDocument();
+   });
++
++  it("genel ayarlar kirli formda Esc → onay iletişimi açılır (Kaydet / Kaydetmeden çık / Vazgeç)", async () => {
++    const onClose = vi.fn();
++    render(
++      <QueryClientProvider client={queryClient}>
++        <MemoryRouter>
++          <GuildSettings guildId="g1" section="genel" onClose={onClose} />
++        </MemoryRouter>
++      </QueryClientProvider>,
++    );
++
++    const nameInput = screen.getByLabelText("Sunucu adı");
++    fireEvent.change(nameInput, { target: { value: "Değiştirilmiş Sunucu Adı" } });
++
++    // Esc bas
++    fireEvent.keyDown(window, { key: "Escape" });
++
++    expect(onClose).not.toHaveBeenCalled();
++    expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: "Kaydetmeden çık" })).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: "Vazgeç" })).toBeInTheDocument();
++
++    // Vazgeç tıklanırsa diyalog kapanır, pencere açık kalır
++    fireEvent.click(screen.getByRole("button", { name: "Vazgeç" }));
++    expect(screen.queryByText("Değişiklikler kaydedilsin mi?")).not.toBeInTheDocument();
++    expect(onClose).not.toHaveBeenCalled();
++
++    // Tekrar Esc ve Kaydetmeden çık
++    fireEvent.keyDown(window, { key: "Escape" });
++    fireEvent.click(screen.getByRole("button", { name: "Kaydetmeden çık" }));
++    expect(onClose).toHaveBeenCalled();
++  });
+ });
+diff --git a/apps/web/src/features/settings/GuildSettings.tsx b/apps/web/src/features/settings/GuildSettings.tsx
+index abe8267..b241133 100644
+--- a/apps/web/src/features/settings/GuildSettings.tsx
++++ b/apps/web/src/features/settings/GuildSettings.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useMemo, useState } from "react";
++import { useCallback, useEffect, useMemo, useState } from "react";
+ import { useNavigate } from "react-router";
+ import { useQuery, useQueryClient } from "@tanstack/react-query";
+ import { PERMISSIONS, type AuditLogEntry, type Role } from "@chatapp/api-types";
+@@ -42,10 +42,53 @@ export default function GuildSettings({ guildId, section, onClose }: { guildId:
+   ];
+   const allowed = entries.filter((e) => e.ok);
+   const [sec, setSec] = useState<Sec>((allowed.find((e) => e.id === section) ?? allowed[0])?.id ?? "genel");
++  const [dirtyGuard, setDirtyGuard] = useState<{
++    dirty: boolean;
++    onSave?: () => Promise<void> | void;
++    onReset?: () => void;
++    saving?: boolean;
++  }>({ dirty: false });
++
++  const handleDirtyChange = useCallback(
++    (dirty: boolean, onSave?: () => Promise<void> | void, onReset?: () => void, saving?: boolean) => {
++      setDirtyGuard((prev) => {
++        if (
++          prev.dirty === dirty &&
++          prev.onSave === onSave &&
++          prev.onReset === onReset &&
++          prev.saving === saving
++        ) {
++          return prev;
++        }
++        return { dirty, onSave, onReset, saving };
++      });
++    },
++    [],
++  );
++
+   if (!g || allowed.length === 0) return null;
+   return (
+-    <SettingsLayer title={g.name} active={sec} onSelect={(id) => setSec(id as Sec)} onClose={onClose} nav={allowed.map((e) => ({ id: e.id, label: t(e.label) }))}>
+-      {sec === "genel" && <General guildId={guildId} onClose={onClose} />}
++    <SettingsLayer
++      title={g.name}
++      active={sec}
++      onSelect={(id) => {
++        setDirtyGuard({ dirty: false });
++        setSec(id as Sec);
++      }}
++      onClose={onClose}
++      nav={allowed.map((e) => ({ id: e.id, label: t(e.label) }))}
++      dirty={dirtyGuard.dirty}
++      onSave={dirtyGuard.onSave}
++      onReset={dirtyGuard.onReset}
++      saving={dirtyGuard.saving}
++    >
++      {sec === "genel" && (
++        <General
++          guildId={guildId}
++          onClose={onClose}
++          onDirtyChange={handleDirtyChange}
++        />
++      )}
+       {sec === "roller" && <Roles guildId={guildId} />}
+       {sec === "uyeler" && <Members guildId={guildId} />}
+       {sec === "davetler" && <Invites guildId={guildId} />}
+@@ -65,8 +108,15 @@ function useLiveInvalidate(key: unknown[], events: Parameters<typeof onDispatch>
+   }, [qc, JSON.stringify(key)]);
+ }
+ 
+-// ───────────── 8.1 Genel ─────────────
+-function General({ guildId, onClose }: { guildId: string; onClose(): void }) {
++function General({
++  guildId,
++  onClose,
++  onDirtyChange,
++}: {
++  guildId: string;
++  onClose(): void;
++  onDirtyChange?: (dirty: boolean, onSave?: () => Promise<void> | void, onReset?: () => void, saving?: boolean) => void;
++}) {
+   const g = useStore((s) => s.guilds[guildId]);
+   const meId = useStore((s) => s.me?.id);
+   const nav = useNavigate();
+@@ -82,6 +132,13 @@ function General({ guildId, onClose }: { guildId: string; onClose(): void }) {
+   const owner = g.ownerId === meId;
+   const dirty = name !== g.name || sys !== (g.systemChannelId ?? "") || notif !== g.defaultNotifications;
+   const texts = Object.values(g.channels).filter((c) => c.type === 0);
++
++  const reset = () => {
++    setName(g.name);
++    setSys(g.systemChannelId ?? "");
++    setNotif(g.defaultNotifications);
++  };
++
+   const save = async () => {
+     setBusy(true);
+     try {
+@@ -89,6 +146,10 @@ function General({ guildId, onClose }: { guildId: string; onClose(): void }) {
+       toast.success(t("settings.saved"));
+     } catch (e) { toast.error(errorText(e)); } finally { setBusy(false); }
+   };
++
++  useEffect(() => {
++    onDirtyChange?.(dirty, save, reset, busy);
++  }, [dirty, busy, name, sys, notif]);
+   return (
+     <>
+       <h2 className={css.h}>{t("gs.general")}</h2>
+diff --git a/apps/web/src/features/settings/ServerSettings.test.tsx b/apps/web/src/features/settings/ServerSettings.test.tsx
+index ec11470..3ad55e9 100644
+--- a/apps/web/src/features/settings/ServerSettings.test.tsx
++++ b/apps/web/src/features/settings/ServerSettings.test.tsx
+@@ -339,5 +339,48 @@ describe("ServerSettings (Sunucu Ayarları Ekranı)", () => {
+     }
+     expect(document.documentElement.dataset.theme).toBe("dev");
+   });
++
++  it("UserSettings profil kirli formda Esc → onay iletişimi açılır (Kaydet / Kaydetmeden çık / Vazgeç)", async () => {
++    useStore.setState({ me: mockAdmin });
++    const onClose = vi.fn();
++
++    render(<UserSettings section="profil" onClose={onClose} guildForProfile={null} />);
++
++    const nameInput = screen.getByLabelText("Görünen ad");
++    fireEvent.change(nameInput, { target: { value: "Değiştirilmiş Profil Adı" } });
++
++    // Esc bas
++    fireEvent.keyDown(window, { key: "Escape" });
++
++    expect(onClose).not.toHaveBeenCalled();
++    expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: "Kaydetmeden çık" })).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: "Vazgeç" })).toBeInTheDocument();
++
++    fireEvent.click(screen.getByRole("button", { name: "Kaydetmeden çık" }));
++    expect(onClose).toHaveBeenCalled();
++  });
++
++  it("UserSettings sunucu ayarları kirli formda Esc → onay iletişimi açılır", async () => {
++    useStore.setState({ me: mockAdmin });
++    vi.spyOn(api, "instanceSettings").mockResolvedValue({
++      settings: mockSettings,
++      etag: '"etag-1"',
++    });
++
++    const onClose = vi.fn();
++    render(<UserSettings section="sunucu" onClose={onClose} guildForProfile={null} />);
++
++    await screen.findByLabelText("Site adı");
++    const nameInput = screen.getByLabelText("Site adı");
++    fireEvent.change(nameInput, { target: { value: "Yeni Site Adı" } });
++
++    // Esc bas
++    fireEvent.keyDown(window, { key: "Escape" });
++
++    expect(onClose).not.toHaveBeenCalled();
++    expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: "Kaydetmeden çık" })).toBeInTheDocument();
++  });
+ });
+ 
+diff --git a/apps/web/src/features/settings/ServerSettings.tsx b/apps/web/src/features/settings/ServerSettings.tsx
+index 253404d..761c04d 100644
+--- a/apps/web/src/features/settings/ServerSettings.tsx
++++ b/apps/web/src/features/settings/ServerSettings.tsx
+@@ -11,7 +11,11 @@ import { toast } from "../../ui/Toast.tsx";
+ import css from "./settings.module.css";
+ import gcss from "../guild/guild.module.css";
+ 
+-export default function ServerSettings() {
++export interface ServerSettingsProps {
++  onDirtyChange?: (dirty: boolean, onSave?: () => Promise<void> | void, onReset?: () => void, saving?: boolean) => void;
++}
++
++export default function ServerSettings({ onDirtyChange }: ServerSettingsProps = {}) {
+   const me = useStore((s) => s.me);
+   const [loading, setLoading] = useState(true);
+   const [loadErr, setLoadErr] = useState<unknown | null>(null);
+@@ -90,42 +94,24 @@ export default function ServerSettings() {
+     void load();
+   }, []);
+ 
+-  if (loading) {
+-    return (
+-      <div className={css.content}>
+-        <h2 className={css.h}>{t("settings.server")}</h2>
+-        <SkeletonRows rows={6} />
+-      </div>
+-    );
+-  }
+-
+-  if (loadErr) {
+-    return (
+-      <div className={css.content}>
+-        <h2 className={css.h}>{t("settings.server")}</h2>
+-        <ErrorCard error={loadErr} onRetry={() => void load()} />
+-      </div>
+-    );
+-  }
+-
+-  if (!initial) return null;
+-
+   // Değişiklik kontrolü
+-  const isDirty =
+-    siteName !== initial.site.name ||
+-    publicUrl !== initial.site.public_url ||
+-    regMode !== initial.registration_mode ||
+-    emailVerificationRequired !== initial.email_verification_required ||
+-    smtpHost !== initial.smtp.host ||
+-    smtpPort !== initial.smtp.port ||
+-    smtpTls !== initial.smtp.tls ||
+-    smtpUsername !== initial.smtp.username ||
+-    smtpFromAddress !== initial.smtp.from_address ||
+-    smtpFromName !== initial.smtp.from_name ||
+-    smtpPassword.length > 0 ||
+-    passwordRemoved;
++  const isDirty = initial
++    ? siteName !== initial.site.name ||
++      publicUrl !== initial.site.public_url ||
++      regMode !== initial.registration_mode ||
++      emailVerificationRequired !== initial.email_verification_required ||
++      smtpHost !== initial.smtp.host ||
++      smtpPort !== initial.smtp.port ||
++      smtpTls !== initial.smtp.tls ||
++      smtpUsername !== initial.smtp.username ||
++      smtpFromAddress !== initial.smtp.from_address ||
++      smtpFromName !== initial.smtp.from_name ||
++      smtpPassword.length > 0 ||
++      passwordRemoved
++    : false;
+ 
+   const handleReset = () => {
++    if (!initial) return;
+     setSiteName(initial.site.name);
+     setPublicUrl(initial.site.public_url);
+     setRegMode(initial.registration_mode);
+@@ -143,6 +129,7 @@ export default function ServerSettings() {
+   };
+ 
+   const handleSave = async () => {
++    if (!initial) return;
+     setSaving(true);
+     setFieldErrors({});
+     setConflict(false);
+@@ -212,6 +199,30 @@ export default function ServerSettings() {
+     }
+   };
+ 
++  useEffect(() => {
++    onDirtyChange?.(Boolean(isDirty), handleSave, handleReset, saving);
++  }, [isDirty, saving]);
++
++  if (loading) {
++    return (
++      <div className={css.content}>
++        <h2 className={css.h}>{t("settings.server")}</h2>
++        <SkeletonRows rows={6} />
++      </div>
++    );
++  }
++
++  if (loadErr) {
++    return (
++      <div className={css.content}>
++        <h2 className={css.h}>{t("settings.server")}</h2>
++        <ErrorCard error={loadErr} onRetry={() => void load()} />
++      </div>
++    );
++  }
++
++  if (!initial) return null;
++
+   const handleTestSmtp = async () => {
+     if (isDirty) {
+       toast.error(t("settings.server.testSmtp.unsavedWarning"));
+diff --git a/apps/web/src/features/settings/UserSettings.tsx b/apps/web/src/features/settings/UserSettings.tsx
+index b8dedfe..e6388fd 100644
+--- a/apps/web/src/features/settings/UserSettings.tsx
++++ b/apps/web/src/features/settings/UserSettings.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef, useState } from "react";
++import { useCallback, useEffect, useRef, useState } from "react";
+ import { api } from "../../api/endpoints.ts";
+ import { t } from "../../i18n/index.ts";
+ import { MAX_AVATAR_FILE, uploadFile } from "../../lib/upload.ts";
+@@ -35,6 +35,29 @@ export default function UserSettings({ section, onClose, guildForProfile }: { se
+   const isAdmin = Boolean(me?.instance_admin);
+   const validSections: readonly string[] = isAdmin ? [...SECTIONS, "sunucu"] : SECTIONS;
+   const [sec, setSec] = useState<Sec>(validSections.includes(section) ? (section as Sec) : "hesabim");
++  const [dirtyGuard, setDirtyGuard] = useState<{
++    dirty: boolean;
++    onSave?: () => Promise<void> | void;
++    onReset?: () => void;
++    saving?: boolean;
++  }>({ dirty: false });
++
++  const handleDirtyChange = useCallback(
++    (dirty: boolean, onSave?: () => Promise<void> | void, onReset?: () => void, saving?: boolean) => {
++      setDirtyGuard((prev) => {
++        if (
++          prev.dirty === dirty &&
++          prev.onSave === onSave &&
++          prev.onReset === onReset &&
++          prev.saving === saving
++        ) {
++          return prev;
++        }
++        return { dirty, onSave, onReset, saving };
++      });
++    },
++    [],
++  );
+ 
+   const getLabel = (s: Sec): string => {
+     switch (s) {
+@@ -52,21 +75,37 @@ export default function UserSettings({ section, onClose, guildForProfile }: { se
+     <SettingsLayer
+       title={t("settings.user")}
+       active={sec}
+-      onSelect={(id) => setSec(id as Sec)}
++      onSelect={(id) => {
++        setDirtyGuard({ dirty: false });
++        setSec(id as Sec);
++      }}
+       onClose={onClose}
+       nav={[
+         ...SECTIONS.map((s) => ({ id: s, label: getLabel(s) })),
+         ...(isAdmin ? [{ id: "sunucu", label: t("settings.server") }] : []),
+         { id: "exit", label: t("settings.signOut"), danger: true, onClick: () => { onClose(); void signOut(); } },
+       ]}
++      dirty={dirtyGuard.dirty}
++      onSave={dirtyGuard.onSave}
++      onReset={dirtyGuard.onReset}
++      saving={dirtyGuard.saving}
+     >
+       {sec === "hesabim" && <Account />}
+       {sec === "guvenlik" && <Security />}
+-      {sec === "profil" && <Profile guildId={guildForProfile} />}
++      {sec === "profil" && (
++        <Profile
++          guildId={guildForProfile}
++          onDirtyChange={handleDirtyChange}
++        />
++      )}
+       {sec === "ses" && <VoiceSettingsSection />}
+       {sec === "kisayollar" && <ShortcutsSection />}
+       {sec === "gorunum" && <Appearance />}
+-      {sec === "sunucu" && isAdmin && <ServerSettings />}
++      {sec === "sunucu" && isAdmin && (
++        <ServerSettings
++          onDirtyChange={handleDirtyChange}
++        />
++      )}
+     </SettingsLayer>
+   );
+ }
+@@ -96,8 +135,13 @@ function Security() {
+   );
+ }
+ 
+-/** 7.2 Profil + sunucu başına takma ad. */
+-function Profile({ guildId }: { guildId: string | null }) {
++function Profile({
++  guildId,
++  onDirtyChange,
++}: {
++  guildId: string | null;
++  onDirtyChange?: (dirty: boolean, onSave?: () => Promise<void> | void, onReset?: () => void, saving?: boolean) => void;
++}) {
+   const me = useStore((s) => s.me);
+   const guilds = useStore((s) => s.guilds);
+   const [name, setName] = useState(me?.display_name ?? "");
+@@ -112,6 +156,13 @@ function Profile({ guildId }: { guildId: string | null }) {
+   useEffect(() => setNick(nickNow ?? ""), [nickNow, gid]);
+   if (!me) return null;
+   const dirty = name !== (me.display_name ?? "") || about !== (me.about ?? "") || avatarId !== me.avatar_id;
++
++  const reset = () => {
++    setName(me.display_name ?? "");
++    setAbout(me.about ?? "");
++    setAvatarId(me.avatar_id ?? null);
++  };
++
+   const save = async () => {
+     setBusy(true);
+     try {
+@@ -119,6 +170,10 @@ function Profile({ guildId }: { guildId: string | null }) {
+       toast.success(t("settings.saved"));
+     } catch (e) { toast.error(errorText(e)); } finally { setBusy(false); }
+   };
++
++  useEffect(() => {
++    onDirtyChange?.(dirty, save, reset, busy);
++  }, [dirty, busy, name, about, avatarId]);
+   return (
+     <>
+       <h2 className={css.h}>{t("settings.profile")}</h2>
+diff --git a/apps/web/src/ui/Menu.tsx b/apps/web/src/ui/Menu.tsx
+index 2f46801..fb21392 100644
+--- a/apps/web/src/ui/Menu.tsx
++++ b/apps/web/src/ui/Menu.tsx
+@@ -207,7 +207,7 @@ export function MenuHost() {
+             onMouseEnter={() => setHighlightedIndex(i)}
+           >
+             {it.icon && <Icon icon={it.icon} size="sm" />}
+-            <span style={{ flex: 1, textAlign: "left" }}>{it.label}</span>
++            <span className={css.menuItemLabel}>{it.label}</span>
+             {it.shortcut && <span className={css.menuShortcut}>{it.shortcut}</span>}
+           </button>
+         ),
+@@ -219,3 +219,11 @@ export function MenuHost() {
+ 
+ export { DropdownMenu };
+ export type { ReactNode };
++
++if (typeof window !== "undefined") {
++  (window as unknown as { __chatappMenu?: { openMenuAt: typeof openMenuAt; openMenu: typeof openMenu; hide: () => void } }).__chatappMenu = {
++    openMenuAt,
++    openMenu,
++    hide: () => useMenuStore.getState().hide(),
++  };
++}
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 3d50259..7ffe515 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -155,6 +155,7 @@ textarea.input, .textarea {
+ .menuDanger { color: var(--hk-danger-text); }
+ .menuDanger:hover, .menuDanger:focus-visible, .menuDanger[data-highlighted] { background: var(--hk-danger-base); color: var(--hk-danger-on); }
+ .menuShortcut { margin-left: auto; font-size: var(--hk-font-size-xs); color: var(--hk-text-muted); }
++.menuItemLabel { flex: 1; text-align: left; }
+ .menuSep { height: var(--hk-border-width); background: var(--hk-border-subtle); margin: var(--hk-space-1) 0; }
+ @keyframes slideIn { from { opacity: 0; transform: translateY(var(--hk-space-1)); } to { opacity: 1; transform: translateY(0); } }
+ 

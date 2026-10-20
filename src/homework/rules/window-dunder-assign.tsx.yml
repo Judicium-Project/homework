@@ -1,0 +1,19 @@
+id: window-dunder-assign
+language: tsx
+severity: error
+message: 'Remove this window.__* hook from production code; tests must drive the real UI, not a test-only global.'
+
+rule:
+  kind: assignment_expression
+  has:
+    field: left
+    kind: member_expression
+    all:
+      - has:
+          field: property
+          regex: '^__'
+      - has:
+          field: object
+          stopBy: end
+          kind: identifier
+          regex: '^window$'

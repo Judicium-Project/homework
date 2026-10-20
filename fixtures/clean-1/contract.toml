@@ -1,0 +1,34 @@
+# DONDURULMUŞ sözleşme: task.md (gorev/G01 @9506130) metninden türetildi.
+# Türetme: "Dosyalar" bölümü açık: değiştir postprocess.mjs; üret contracts/out/openapi.yaml + "gen'in değiştirdiği üretilmiş dosyalar"
+# (yolları metinde yok → generated_by ile işaretlendi, glob uydurulmadı).
+version = 1
+task = "G01"
+source = "gorev/G01-errorcode-genisletilebilir.md @9506130"
+
+allowed_paths = [
+  "contracts/scripts/postprocess.mjs",
+  "contracts/out/openapi.yaml",
+]
+allowed_dependencies = []          # Yasak: "Bağımlılık eklemek"
+generated_by = "pnpm gen"          # "Yalnız `pnpm gen` ile" üretilen dosyalar yol denetiminde izinli sayılır
+
+acceptance = [
+  'grep -n "x-extensible-enum" contracts/out/openapi.yaml',
+  'pnpm gen',
+  'cd services/chatapp && go build ./...',
+]
+acceptance_manual = [
+  'grep çıktısı ErrorCode altında tek satır',
+  'pnpm gen ikinci kez koşunca git status yeni değişiklik göstermiyor (kararlı)',
+  'oasdiff breaking komutu (AGENTS.md; komut task.md içinde yazılı değil) ERR vermiyor',
+]
+
+[forbidden]
+paths = ["contracts/src/common.tsp"]   # "common.tsp'de enum üyelerini değiştirmek"
+paths_except = []
+patterns = []
+notes = [
+  "TypeSpec decorator denemeleri ile sözleşme yapısını değiştirmek",
+  "Bağımlılık eklemek",
+  "enum: listesini silmek/değiştirmek; başka şemaya dokunmak",
+]

@@ -1,0 +1,5 @@
+# Temiz örnek 2 (A2): G32 ses kartı sol sütuna — düzeltme turu commit'i yok (tek commit 8709f2d), UI yüzeyi (tsx + css).
+fixture: clean-2
+diff_cut: "Kesim yok (tam diff, 394 satır)."
+issues: []
+note: "Seçim gerekçesi ve sınırlamalar fixtures/README.md'de (clean-2 bölümü)."

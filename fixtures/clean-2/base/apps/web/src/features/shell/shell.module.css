@@ -1,0 +1,284 @@
+.app { height: 100%; display: flex; flex-direction: column; background: var(--hk-bg-base); overflow: hidden; position: relative; }
+.main {
+  flex: 1; min-height: 0; display: grid; gap: var(--hk-layout-gap); padding: var(--hk-layout-gap) var(--hk-layout-gap) var(--hk-layout-gap) 0;
+  grid-template-columns: calc(var(--hk-size-control-lg) + var(--hk-space-4)) 230px minmax(var(--hk-layout-content-min), 1fr);
+}
+.main[data-right="true"], .main[data-members="true"] {
+  grid-template-columns: calc(var(--hk-size-control-lg) + var(--hk-space-4)) 230px minmax(var(--hk-layout-content-min), 1fr) 280px;
+}
+/* Kanal sütunu: genişte ızgara sütunu (display: contents), mobilde soldan çekmece. */
+.nav { display: contents; }
+.left { display: flex; flex-direction: column; gap: var(--hk-layout-gap); min-height: 0; min-width: 0; width: 230px; }
+.content { background: var(--hk-bg-content); border-radius: var(--hk-radius-lg); min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.rightCol { display: flex; flex-direction: column; gap: var(--hk-layout-gap); min-height: 0; min-width: 0; width: 280px; }
+.skipLink { position: absolute; left: var(--hk-space-2); top: -100px; z-index: var(--hk-z-toast); }
+.skipLink:focus { top: var(--hk-space-2); }
+
+/* ───────── Çekmeceler (dar ekran) ───────── */
+.scrim { position: fixed; inset: 0; z-index: calc(var(--hk-z-dropdown) - 1); background: var(--hk-bg-scrim); }
+.membersDrawer {
+  position: fixed; z-index: var(--hk-z-dropdown); top: var(--hk-layout-gap); right: var(--hk-layout-gap); bottom: var(--hk-layout-gap);
+  width: min(var(--hk-layout-drawer), calc(100% - var(--hk-space-12))); display: flex; flex-direction: column; gap: var(--hk-layout-gap);
+  border-radius: var(--hk-radius-lg); box-shadow: var(--hk-shadow-overlay);
+}
+.membersDrawer > .members { flex: 1; }
+.membersDrawer:focus, .nav:focus { outline: none; }
+.navToggle { position: absolute; z-index: var(--hk-z-sticky); top: calc((var(--hk-layout-header) - var(--hk-size-control-md)) / 2); left: var(--hk-space-2); }
+
+/* ───────── Bağlantı şeridi (2.3) ───────── */
+.strip { height: var(--hk-layout-connection-strip); display: flex; align-items: center; justify-content: center; font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-medium); flex: none; }
+.strip_warning { background: var(--hk-warning-base); color: var(--hk-warning-on); }
+.strip_danger { background: var(--hk-danger-base); color: var(--hk-danger-on); }
+.verifyBand { display: flex; align-items: center; justify-content: center; gap: var(--hk-space-2); padding: var(--hk-space-1) var(--hk-space-4); background: var(--hk-warning-subtle); color: var(--hk-warning-text); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); flex: none; flex-wrap: wrap; }
+.verifyText { overflow-wrap: anywhere; }
+.strip_success { background: var(--hk-success-base); color: var(--hk-success-on); }
+
+/* ───────── Sunucu şeridi (2.1, sol dikey düzen) ───────── */
+.rail {
+  width: calc(var(--hk-size-control-lg) + var(--hk-space-4));
+  height: 100%; min-height: 0; display: flex; flex-direction: column; align-items: center;
+  padding: 0 var(--hk-space-2); gap: var(--hk-space-2); flex: none; z-index: var(--hk-z-rail);
+  box-sizing: border-box;
+}
+.railStart {
+  display: flex; flex-direction: column; align-items: center; gap: var(--hk-space-2);
+  flex: none; width: 100%;
+}
+.railDivider {
+  width: var(--hk-space-8); height: var(--hk-ring-width); background: var(--hk-border-subtle);
+  border-radius: var(--hk-radius-full); margin: 0 auto; flex: none;
+}
+.railScroll {
+  display: flex; flex-direction: column; align-items: center; gap: var(--hk-space-2);
+  flex: 1; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: thin; padding: var(--hk-space-0_5) 0;
+}
+.railEnd {
+  display: flex; flex-direction: column; align-items: center; gap: var(--hk-space-2);
+  flex: none; width: 100%; margin-top: auto;
+}
+.railItem {
+  display: flex; align-items: center; justify-content: center;
+  width: var(--hk-size-control-lg); height: var(--hk-size-control-lg);
+  min-width: var(--hk-size-control-lg); min-height: var(--hk-size-control-lg);
+  border-radius: var(--hk-radius-server); background: var(--hk-bg-surface);
+  color: var(--hk-text-secondary); position: relative; cursor: pointer; border: none;
+  padding: 0; flex: none; text-decoration: none;
+  transition: background-color var(--hk-motion-duration-fast) var(--hk-motion-easing-standard),
+              color var(--hk-motion-duration-fast) var(--hk-motion-easing-standard),
+              transform var(--hk-motion-duration-fast) var(--hk-motion-easing-standard);
+}
+.railItem:hover { background: var(--hk-bg-hover); color: var(--hk-text-primary); }
+.railItem:active { transform: translateY(1px); }
+.railItem[aria-current="page"], .railItem[data-selected="true"] {
+  background: var(--hk-text-primary); color: var(--hk-bg-base);
+  box-shadow: 0 0 0 var(--hk-ring-offset) var(--hk-bg-base),
+              0 0 0 calc(var(--hk-ring-offset) + var(--hk-ring-selected-width)) var(--hk-accent-ring);
+}
+.railItem:focus-visible { outline-offset: calc(2 * var(--hk-ring-offset) + var(--hk-ring-selected-width)); }
+.railHome { color: var(--hk-text-primary); }
+.itemIcon {
+  width: 100%; height: 100%; border-radius: inherit; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--hk-font-size-base); font-weight: var(--hk-font-weight-semibold);
+  color: inherit;
+}
+.itemIcon img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.railGuildItem[data-unavailable="true"] { opacity: 0.5; filter: grayscale(1); }
+.railGuildItem[data-drop="true"]::before {
+  content: ""; position: absolute; left: 0; right: 0; top: calc(-1 * var(--hk-space-1));
+  height: var(--hk-ring-width); background: var(--hk-accent-base); border-radius: var(--hk-radius-full);
+}
+.pip {
+  position: absolute; left: var(--hk-space-0_5); bottom: var(--hk-space-0_5);
+  width: var(--hk-size-unread-pip); height: var(--hk-size-unread-pip);
+  border-radius: var(--hk-radius-full); background: var(--hk-text-primary);
+  box-shadow: 0 0 0 var(--hk-ring-offset) var(--hk-bg-base); flex: none; pointer-events: none;
+}
+.railBadge {
+  position: absolute; right: calc(-1 * var(--hk-space-1)); bottom: calc(-1 * var(--hk-space-1));
+  min-width: var(--hk-size-badge-min); height: var(--hk-size-badge-min);
+  padding: 0 var(--hk-space-1); border-radius: var(--hk-radius-full);
+  background: var(--hk-accent-base); color: var(--hk-accent-on);
+  font-size: var(--hk-font-size-xs); line-height: 1; font-weight: var(--hk-font-weight-bold);
+  font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 var(--hk-ring-offset) var(--hk-bg-base); pointer-events: none; z-index: 1;
+}
+.railVoice {
+  position: absolute; right: calc(-1 * var(--hk-space-1)); top: calc(-1 * var(--hk-space-1));
+  width: var(--hk-size-icon-sm); height: var(--hk-size-icon-sm); border-radius: var(--hk-radius-full);
+  background: var(--hk-voice-base); color: var(--hk-voice-on);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 var(--hk-ring-offset) var(--hk-bg-base); pointer-events: none; z-index: 1;
+}
+.railVoice svg { width: var(--hk-space-3); height: var(--hk-space-3); }
+.railAdd { color: var(--hk-text-muted); }
+.railAddPrimary { background: var(--hk-accent-base); color: var(--hk-accent-on); }
+.railAddPrimary:hover { background: var(--hk-accent-hover); color: var(--hk-accent-on); }
+.railSearch { color: var(--hk-text-muted); }
+.searchKbd { display: none; }
+
+/* ───────── Kanal listesi (4.1) ───────── */
+.channelCol { background: var(--hk-bg-surface); border-radius: var(--hk-radius-lg); display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+.guildHead { height: var(--hk-layout-header); flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--hk-space-2); padding: 0 var(--hk-space-3); font-size: var(--hk-font-size-lg); line-height: var(--hk-font-line-height-lg); font-weight: var(--hk-font-weight-semibold); width: 100%; text-align: left; border-bottom: var(--hk-border-width) solid var(--hk-border-subtle); }
+.guildHead:hover { background: var(--hk-bg-hover); }
+.guildHead span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chanScroll { flex: 1; overflow-y: auto; padding: var(--hk-space-1) var(--hk-space-2) var(--hk-space-4); min-height: 0; }
+.category { display: flex; align-items: center; gap: var(--hk-space-1); width: 100%; height: var(--hk-size-row-category); margin-top: var(--hk-space-4); padding: 0 var(--hk-space-1); color: var(--hk-text-muted); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-semibold); text-align: left; border-radius: var(--hk-radius-sm); }
+.category:hover { color: var(--hk-text-secondary); }
+.category span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catRow { display: flex; align-items: center; }
+.chanRow { position: relative; display: flex; align-items: center; gap: var(--hk-space-1_5); height: var(--hk-size-row-channel); padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); color: var(--hk-text-muted); font-weight: var(--hk-font-weight-medium); text-decoration: none; width: 100%; text-align: left; }
+.chanRow svg { flex: none; }
+.chanMain { display: flex; align-items: center; gap: var(--hk-space-1_5); flex: 1; min-width: 0; height: 100%; text-align: left; color: inherit; font-weight: inherit; border-radius: var(--hk-radius-md); }
+.chanRow:hover { background: var(--hk-bg-hover); color: var(--hk-text-secondary); }
+.chanRow[aria-current="page"], .chanRow:has(> .chanMain[aria-current="page"]) { background: var(--hk-bg-selected); color: var(--hk-text-primary); }
+.chanRow[data-unread="true"] { color: var(--hk-text-primary); font-weight: var(--hk-font-weight-semibold); }
+.chanName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chanVoiceActive .chanName { color: var(--hk-voice-text); }
+.chanActions { display: none; gap: var(--hk-space-0_5); }
+.chanRow:hover .chanActions, .chanRow:focus-within .chanActions { display: flex; }
+.chanActions button { width: var(--hk-size-control-sm); height: var(--hk-size-control-sm); }
+.voiceUsers { display: flex; flex-direction: column; margin-left: var(--hk-space-6); }
+.voiceUser { display: flex; align-items: center; gap: var(--hk-space-2); height: var(--hk-size-row-voice-user); padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); color: var(--hk-text-secondary); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); width: 100%; text-align: left; }
+.voiceUser:hover { background: var(--hk-bg-hover); }
+.voiceUser[data-speaking="true"] { color: var(--hk-text-primary); }
+.voiceUser .vName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voiceUser svg { color: var(--hk-text-muted); }
+.live { background: var(--hk-live); color: var(--hk-danger-on); font-size: var(--hk-font-size-xs); font-weight: var(--hk-font-weight-bold); border-radius: var(--hk-radius-xs); padding: 0 var(--hk-space-1); }
+
+/* ───────── Kullanıcı çubuğu (2.2, kanal kartının altında küçük kart) ───────── */
+.userBarWrap { background: var(--hk-bg-raised); border-radius: var(--hk-radius-lg); flex: none; overflow: hidden; }
+.userBar { height: var(--hk-layout-user-bar); display: flex; align-items: center; gap: var(--hk-space-1); padding: 0 var(--hk-space-2); }
+.userBtn { display: flex; align-items: center; gap: var(--hk-space-2); flex: 1; min-width: 0; border-radius: var(--hk-radius-md); padding: var(--hk-space-1); text-align: left; }
+.userBtn:hover { background: var(--hk-bg-hover); }
+.userNames { display: flex; flex-direction: column; min-width: 0; }
+.userNames strong { font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userNames span { color: var(--hk-text-muted); font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ───────── Ses kartı (G29 Madde 4, sağ sütunda hep görünen) ───────── */
+.voiceCard {
+  background: var(--hk-bg-raised); border-radius: var(--hk-radius-lg); padding: var(--hk-space-3);
+  display: flex; flex-direction: column; gap: var(--hk-space-2); flex: none; overflow: hidden;
+  backdrop-filter: blur(var(--hk-surface-blur)); -webkit-backdrop-filter: blur(var(--hk-surface-blur));
+}
+.voiceCardHead {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: var(--hk-space-1); border-radius: var(--hk-radius-md); text-align: left; cursor: pointer;
+  color: var(--hk-text-primary); font-weight: var(--hk-font-weight-semibold); font-size: var(--hk-font-size-sm);
+}
+.voiceCardHead:hover { background: var(--hk-bg-hover); }
+.voiceCardTitle { display: flex; align-items: center; gap: var(--hk-space-1_5); min-width: 0; }
+.voiceCardTitle svg { color: var(--hk-voice-text); flex: none; }
+.voiceCardTitle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voiceCardUsers { display: flex; flex-direction: column; gap: var(--hk-space-1); max-height: 160px; overflow-y: auto; padding: 0 var(--hk-space-1); }
+.voiceCardUser {
+  display: flex; align-items: center; gap: var(--hk-space-2); height: var(--hk-size-row-voice-user);
+  padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); color: var(--hk-text-secondary);
+  font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); width: 100%;
+}
+.voiceCardUser[data-speaking="true"] { color: var(--hk-text-primary); }
+.voiceCardUserName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voiceCardSpeakingTag { font-size: var(--hk-font-size-xs); color: var(--hk-voice-text); font-weight: var(--hk-font-weight-medium); }
+.voiceCardMutedIcon { color: var(--hk-text-muted); }
+.voiceCardControls { display: flex; gap: var(--hk-space-1_5); padding-top: var(--hk-space-1); }
+.voiceCardControls > * { flex: 1; justify-content: center; }
+
+/* ───────── Mobilde ince canlı bandı (G29 Madde 6) ───────── */
+.voiceLiveStrip {
+  background: var(--hk-voice-subtle); color: var(--hk-voice-text); padding: var(--hk-space-2) var(--hk-space-3);
+  border-bottom: var(--hk-border-width) solid var(--hk-border-subtle); display: flex; align-items: center;
+  justify-content: space-between; gap: var(--hk-space-2); cursor: pointer; flex: none;
+}
+.voiceLiveStripMain { display: flex; align-items: center; gap: var(--hk-space-1_5); min-width: 0; font-size: var(--hk-font-size-sm); font-weight: var(--hk-font-weight-semibold); }
+.voiceLiveStripName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voiceLiveStripCount { color: var(--hk-text-muted); font-size: var(--hk-font-size-xs); }
+
+/* ───────── İçerik başlığı ───────── */
+.header { height: var(--hk-layout-header); flex: none; display: flex; align-items: center; gap: var(--hk-space-2); padding: 0 var(--hk-space-4); border-bottom: var(--hk-border-width) solid var(--hk-border-subtle); }
+.headerTitle { display: flex; align-items: center; gap: var(--hk-space-1_5); font-size: var(--hk-font-size-lg); line-height: var(--hk-font-line-height-lg); font-weight: var(--hk-font-weight-semibold); min-width: 0; }
+.headerTitle svg { color: var(--hk-text-muted); flex: none; }
+.headerTitle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic { color: var(--hk-text-secondary); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; text-align: left; padding-left: var(--hk-space-2); border-left: var(--hk-border-width) solid var(--hk-border-subtle); }
+.topic[data-open="true"] { white-space: normal; }
+.spacer { flex: 1; }
+
+/* ───────── Üye paneli (4.3) ───────── */
+.members { background: var(--hk-bg-surface); border-radius: var(--hk-radius-lg); min-height: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; }
+.memberScroll { flex: 1; overflow-y: auto; padding: 0 var(--hk-space-2); min-height: 0; }
+.groupHead { display: flex; align-items: flex-end; padding: 0 var(--hk-space-2) var(--hk-space-1); color: var(--hk-text-muted); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-semibold); }
+.memberRow { display: flex; align-items: center; gap: var(--hk-space-3); height: var(--hk-size-row-member); padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); width: 100%; text-align: left; }
+.memberRow:hover { background: var(--hk-bg-hover); }
+.memberRow[data-offline="true"] .mName { color: var(--hk-text-muted); }
+.mName { font-weight: var(--hk-font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--hk-role-color, var(--hk-text-primary)); }
+.memberHeadPad { height: var(--hk-layout-header); flex: none; display: flex; align-items: center; padding: 0 var(--hk-space-4); font-weight: var(--hk-font-weight-semibold); color: var(--hk-text-secondary); }
+
+/* ───────── Hızlı geçiş (2.4) ───────── */
+.qs { display: flex; flex-direction: column; gap: var(--hk-space-3); }
+.qsList { max-height: calc(var(--hk-size-row-channel) * 9); overflow-y: auto; display: flex; flex-direction: column; gap: var(--hk-space-0_5); }
+.qsItem { display: flex; align-items: center; gap: var(--hk-space-2); min-height: var(--hk-size-row-channel); padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-md); color: var(--hk-text-secondary); width: 100%; text-align: left; }
+.qsItem[data-active="true"] { background: var(--hk-bg-selected); color: var(--hk-text-primary); }
+.qsGroup { color: var(--hk-text-muted); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-semibold); padding: var(--hk-space-2) var(--hk-space-1) var(--hk-space-1); }
+.qsMeta { margin-left: auto; color: var(--hk-text-muted); font-size: var(--hk-font-size-xs); }
+
+/* ───────── Ses odası yer tutucu / ana sayfa ───────── */
+.placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--hk-space-3); color: var(--hk-text-secondary); text-align: center; max-width: var(--hk-layout-empty-max); padding: var(--hk-space-6); }
+.placeholder svg { color: var(--hk-text-muted); }
+.homeCol { background: var(--hk-bg-surface); border-radius: var(--hk-radius-lg); flex: 1; padding: var(--hk-space-4); color: var(--hk-text-secondary); min-height: 0; }
+.homeCol h2 { font-size: var(--hk-font-size-lg); line-height: var(--hk-font-line-height-lg); color: var(--hk-text-primary); margin-bottom: var(--hk-space-2); }
+.btnRow { display: flex; gap: var(--hk-space-2); }
+
+/* ───────── Mobil / dar ekran (G29 Madde 2 & 6, G30, G31) ───────── */
+@media (max-width: 768px) {
+  .app[data-mobile="true"] .rail,
+  .rail {
+    position: fixed; bottom: 0; left: 0; right: 0; width: 100%; height: auto;
+    min-height: calc(var(--hk-size-control-lg) + var(--hk-space-2));
+    display: flex; flex-direction: row; align-items: center; gap: var(--hk-space-2);
+    padding: var(--hk-space-1) var(--hk-space-2) max(var(--hk-space-1), env(safe-area-inset-bottom));
+    background: var(--hk-bg-surface); border-top: var(--hk-border-width) solid var(--hk-border-subtle);
+    backdrop-filter: blur(var(--hk-surface-blur)); -webkit-backdrop-filter: blur(var(--hk-surface-blur));
+    z-index: var(--hk-z-rail); box-sizing: border-box;
+  }
+  .railStart {
+    display: flex; flex-direction: row; align-items: center; flex: none; width: auto;
+  }
+  .railDivider {
+    display: none;
+  }
+  .railScroll {
+    display: flex; flex-direction: row; align-items: center; gap: var(--hk-space-1_5);
+    flex: 1; min-width: 0; height: auto; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: thin; padding: var(--hk-space-0_5) 0;
+  }
+  .railEnd {
+    display: flex; flex-direction: row; align-items: center; gap: var(--hk-space-1_5);
+    flex: none; width: auto; margin-top: 0;
+  }
+  .railGuildItem[data-drop="true"]::before {
+    left: calc(-1 * var(--hk-space-1)); right: auto; top: 0; bottom: 0;
+    width: var(--hk-ring-width); height: auto;
+  }
+  .main, .main[data-right="true"], .main[data-members="true"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding: var(--hk-layout-gap) var(--hk-layout-gap) calc(var(--hk-size-control-lg) + var(--hk-space-2) + max(var(--hk-space-2), env(safe-area-inset-bottom))) var(--hk-layout-gap) !important;
+  }
+  .rightCol { display: none; }
+  .nav { display: none; }
+  .nav[data-open="true"] {
+    display: flex; flex-direction: column; position: fixed; z-index: var(--hk-z-dropdown);
+    top: var(--hk-layout-gap); left: var(--hk-layout-gap); bottom: calc(var(--hk-size-control-lg) + var(--hk-space-3) + max(var(--hk-space-2), env(safe-area-inset-bottom)));
+    width: min(var(--hk-layout-drawer), calc(100% - var(--hk-space-12)));
+    background: transparent; box-shadow: var(--hk-shadow-overlay);
+  }
+  .nav[data-open="true"] .left { width: 100%; height: 100%; }
+  .header { padding-left: calc(var(--hk-space-2) * 2 + var(--hk-size-control-md)); }
+
+  /* Mobilde tam genişlik üst sayfa modal */
+  .qsModal {
+    position: fixed !important; inset: 0 !important; max-width: 100% !important; max-height: 100% !important;
+    height: 100% !important; width: 100% !important; border-radius: 0 !important;
+    padding: var(--hk-space-4) !important; padding-top: max(var(--hk-space-4), env(safe-area-inset-top)) !important;
+  }
+  .qsModal .qsList { max-height: calc(100vh - 180px); }
+}

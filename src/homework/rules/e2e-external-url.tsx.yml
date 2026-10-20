@@ -1,0 +1,14 @@
+id: e2e-external-url
+language: tsx
+severity: error
+metadata:
+  scope: e2e
+message: 'Do not load external URLs or CDNs in e2e tests; test the locally served application.'
+
+rule:
+  any:
+    - kind: string
+    - kind: template_string
+  regex: 'https?://'
+  not:
+    regex: 'https?://(localhost|127\.0\.0\.1)'

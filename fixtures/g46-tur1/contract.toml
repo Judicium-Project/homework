@@ -1,0 +1,41 @@
+# DONDURULMUŞ sözleşme: task.md (gorev/G46 @97d8078 = orijinal + Düzeltme turu 1) metninden türetildi.
+# G46 sözleşmesinden farkı: Düzeltme turu 1 madde 5 package.json'ı yalnız @floating-ui/react satırı eklenecek şekilde kısıtlar
+# (forbidden.notes); madde 1 harici ağ (CDN) yasaklar. Yol/bağımlılık izinleri g46 ile aynı gerekçeyle türetildi.
+version = 1
+task = "G46-tur1"
+source = "gorev/G46-pencere-konumlama-alanlar.md @97d80785d1a662c3350ef521abc074cbddd7db27"
+
+allowed_paths = [
+  "apps/web/src/**",
+  "apps/web/e2e/konumlama.spec.ts",
+  "apps/web/package.json",
+  "pnpm-lock.yaml",
+  "packages/tokens/**",
+]
+allowed_dependencies = ["@floating-ui/react"]
+generated_by = ""
+
+acceptance = [
+  'pnpm lint && pnpm test && pnpm build',
+  'node scripts/denetle-uyumluluk.mjs',
+]
+acceptance_manual = [
+  'vitest: ChannelSettings kaydet → onClose; kirli formda Esc → onay iletişimi',
+  'Playwright: gerçek uygulamada gerçek Menu, 390x844 ve 1280x800, dört köşeye yakın tetikleyici, getBoundingClientRect görünür alanda',
+  'GuildSettings, ServerSettings, UserSettings kirli formda Esc → onay iletişimi testleri',
+  'denetle-uyumluluk.mjs 0 ihlal',
+]
+
+[forbidden]
+paths = ["apps/web/e2e/**"]
+paths_except = ["apps/web/e2e/konumlama.spec.ts"]
+patterns = [
+  { regex = 'text-transform:\s*uppercase', globs = ["**/*.css", "**/*.tsx", "**/*.ts"] },
+]
+notes = [
+  "Başka yeni bağımlılık",
+  "apps/web/package.json bağımlılık sırasını değiştirmek (yalnız @floating-ui/react satırı eklenir; Düzeltme turu 1 madde 5)",
+  "Harici ağ / CDN kullanan e2e (Düzeltme turu 1 madde 1)",
+  "Sabit Türkçe metin (i18n anahtarı)",
+  "git commit",
+]

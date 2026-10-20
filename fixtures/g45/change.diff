@@ -1,0 +1,934 @@
+diff --git a/apps/web/src/features/chat/Composer.test.tsx b/apps/web/src/features/chat/Composer.test.tsx
+index ba54439..63df821 100644
+--- a/apps/web/src/features/chat/Composer.test.tsx
++++ b/apps/web/src/features/chat/Composer.test.tsx
+@@ -99,4 +99,102 @@ describe("yazma alanı", () => {
+     // Kısıt uyarısı kaybolur
+     expect(screen.queryByText(/E-postanı doğrulayana kadar sunucu\/kanal oluşturamaz ve mesaj gönderemezsin/)).toBeNull();
+   });
++
++  it("5000 karakter yapıştır → değer 5000 kalır, sayaç kırmızı, gönder kapalı; dosya olarak gönder .txt File üretir", async () => {
++    const { fireEvent, waitFor } = await import("@testing-library/react");
++    const { vi } = await import("vitest");
++    const { api } = await import("../../api/endpoints.ts");
++    const uploadMod = await import("../../lib/upload.ts");
++
++    setup(PERMISSIONS.VIEW_CHANNEL | PERMISSIONS.SEND_MESSAGES | PERMISSIONS.ATTACH_FILES);
++    const sendSpy = vi.spyOn(api, "sendMessage");
++    const uploadSpy = vi.spyOn(uploadMod, "uploadFile").mockImplementation(async () => {
++      return { id: "a1", filename: "mesaj.txt", size: 5000, content_type: "text/plain", url: null, proxy_url: null, width: null, height: null, status: "ready", url_expires_at: null };
++    });
++
++    render(<Composer guildId="g1" channel={channel} />);
++    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
++
++    // 5000 karakter yapıştır
++    const text5000 = "a".repeat(5000);
++    fireEvent.change(input, { target: { value: text5000 } });
++
++    // 1. Değer 5000 kalır (maxLength kesmez)
++    expect(input.value).toHaveLength(5000);
++
++    // 2. Sayaç kırmızı (data-over="true")
++    const counter = screen.getByTestId("char-counter");
++    expect(counter).toBeInTheDocument();
++    expect(counter).toHaveAttribute("data-over", "true");
++
++    // 3. Gönder kapalı ve Enter devre dışı
++    const sendBtn = screen.getByTestId("send-button");
++    expect(sendBtn).toBeDisabled();
++
++    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
++    expect(sendSpy).not.toHaveBeenCalled();
++
++    // 4. "Dosya olarak gönder" düğmesi görünür ve tıklandığında .txt File üretir
++    const sendAsFileBtn = screen.getByTestId("send-as-file");
++    expect(sendAsFileBtn).toBeInTheDocument();
++
++    fireEvent.click(sendAsFileBtn);
++
++    await waitFor(() => {
++      expect(uploadSpy).toHaveBeenCalledTimes(1);
++    });
++    const uploaded = uploadSpy.mock.calls[0][0];
++    expect(uploaded).toBeInstanceOf(File);
++    expect(uploaded.name).toBe("mesaj.txt");
++    expect(uploaded.type).toContain("text/plain");
++
++    // Yazma alanı temizlenir
++    expect(input.value).toBe("");
++  });
++
++  it("422 TOO_LONG alan hatası metni görünür, genel hata yalnız alan hatası yoksa", async () => {
++    const { fireEvent, waitFor } = await import("@testing-library/react");
++    const { vi } = await import("vitest");
++    const { api } = await import("../../api/endpoints.ts");
++    const { ApiError } = await import("../../api/client.ts");
++
++    setup(PERMISSIONS.VIEW_CHANNEL | PERMISSIONS.SEND_MESSAGES);
++    const sendSpy = vi.spyOn(api, "sendMessage").mockRejectedValueOnce(
++      new ApiError(422, {
++        code: "VALIDATION_FAILED",
++        message: "Girdi doğrulanamadı.",
++        errors: [{ field: "content", code: "TOO_LONG", message: "Mesaj en çok 4000 karakter olabilir.", max: 4000, actual: 4001 }],
++      }),
++    );
++
++    render(<Composer guildId="g1" channel={channel} />);
++    const input = screen.getByRole("textbox");
++
++    fireEvent.change(input, { target: { value: "test" } });
++    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
++
++    await waitFor(() => {
++      expect(sendSpy).toHaveBeenCalledTimes(1);
++    });
++
++    // Composer altında "Mesaj çok uzun: 4001 / 4000 karakter" görünür
++    expect(await screen.findByText("Mesaj çok uzun: 4001 / 4000 karakter")).toBeInTheDocument();
++
++    // Alan hatası olmayan 422'de genel "Girdi doğrulanamadı." görünür
++    sendSpy.mockRejectedValueOnce(
++      new ApiError(422, {
++        code: "VALIDATION_FAILED",
++        message: "Girdi doğrulanamadı.",
++      }),
++    );
++
++    fireEvent.change(input, { target: { value: "test2" } });
++    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
++
++    await waitFor(() => {
++      expect(sendSpy).toHaveBeenCalledTimes(2);
++    });
++    expect(await screen.findByText("Girdi doğrulanamadı.")).toBeInTheDocument();
++  });
+ });
++
+diff --git a/apps/web/src/features/chat/Composer.tsx b/apps/web/src/features/chat/Composer.tsx
+index 5ddd565..193dc66 100644
+--- a/apps/web/src/features/chat/Composer.tsx
++++ b/apps/web/src/features/chat/Composer.tsx
+@@ -1,6 +1,6 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+-import { Paperclip, Plus, Smile, X } from "lucide-react";
+-import { PERMISSIONS, type Attachment, type Channel } from "@chatapp/api-types";
++import { Paperclip, Plus, Send, Smile, X } from "lucide-react";
++import { MESSAGE_CONTENT_MAX, PERMISSIONS, type Attachment, type Channel } from "@chatapp/api-types";
+ import { api } from "../../api/endpoints.ts";
+ import { t } from "../../i18n/index.ts";
+ import { has } from "../../lib/perm.ts";
+@@ -13,7 +13,7 @@ import { Badge } from "../../ui/Badge.tsx";
+ import { IconButton } from "../../ui/Button.tsx";
+ import { ConfirmModal } from "../../ui/Modal.tsx";
+ import { Icon } from "../../ui/Icon.tsx";
+-import { isEmailNotVerified } from "../../api/client.ts";
++import { ApiError, isEmailNotVerified } from "../../api/client.ts";
+ import { errorText } from "../../ui/States.tsx";
+ import { toast } from "../../ui/Toast.tsx";
+ import { useChatUi } from "./chatUi.ts";
+@@ -149,7 +149,11 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+ 
+   const uploading = files.some((f) => f.status === "uploading");
+   const ready = files.filter((f) => f.status === "ready" && f.attachment).map((f) => f.attachment as Attachment);
+-  const canSubmit = (text.trim().length > 0 || ready.length > 0) && !uploading;
++  const charCount = useMemo(() => [...text].length, [text]);
++  const isOverLimit = charCount > MESSAGE_CONTENT_MAX;
++  const showCounter = charCount >= Math.floor(MESSAGE_CONTENT_MAX * 0.9);
++  const remaining = MESSAGE_CONTENT_MAX - charCount;
++  const canSubmit = (text.trim().length > 0 || ready.length > 0) && !uploading && !isOverLimit;
+ 
+   const finalContent = (raw: string): string => {
+     let out = raw;
+@@ -168,6 +172,17 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+     sendMessage(guildId ?? "", channel.id, content, { replyTo: r?.message, mentionReply: r?.mention, attachments: ready }).catch((e) => {
+       if (isEmailNotVerified(e)) {
+         setEmailNotVerified(true);
++      } else if (e instanceof ApiError && e.status === 422) {
++        const contentErr = e.body?.errors?.find((x) => x.field === "content");
++        if (contentErr?.code === "TOO_LONG") {
++          const actual = contentErr.actual ?? [...content].length;
++          const max = contentErr.max ?? MESSAGE_CONTENT_MAX;
++          setWarn(t("composer.tooLong", { actual, max }));
++        } else if (contentErr?.message) {
++          setWarn(contentErr.message);
++        } else {
++          setWarn(errorText(e));
++        }
+       } else {
+         toast.error(errorText(e));
+       }
+@@ -259,7 +274,7 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+     }
+     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+       e.preventDefault();
+-      submit();
++      if (!isOverLimit) submit();
+     } else if (e.key === "Escape" && reply) {
+       useChatUi.getState().setReply(channel.id, null);
+     } else if (e.key === "ArrowUp" && text === "" && files.length === 0) {
+@@ -356,10 +371,34 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+                 }
+               }}
+               onBlur={() => setTimeout(() => setSug(null), 120)}
+-              maxLength={4000}
+               data-testid="composer"
+             />
++            {isOverLimit && (
++              <button
++                type="button"
++                className={css.sendAsFileBtn}
++                onClick={() => {
++                  const file = new File([text], "mesaj.txt", { type: "text/plain;charset=utf-8" });
++                  addFiles([file]);
++                  setText("");
++                  setWarn(null);
++                }}
++                data-testid="send-as-file"
++              >
++                {t("composer.sendAsFile")}
++              </button>
++            )}
++            {showCounter && (
++              <span
++                className={css.charCounter}
++                data-over={isOverLimit}
++                data-testid="char-counter"
++              >
++                {remaining}
++              </span>
++            )}
+             <IconButton icon={Smile} label={t("composer.emoji")} size="sm" onClick={(e) => setPicker(e.currentTarget.getBoundingClientRect())} />
++            <IconButton icon={Send} label={t("composer.send")} size="sm" onClick={submit} disabled={!canSubmit} data-testid="send-button" />
+           </div>
+         </div>
+         {warn && <div className={css.warn} role="alert">{warn}</div>}
+diff --git a/apps/web/src/features/chat/MessageItem.test.tsx b/apps/web/src/features/chat/MessageItem.test.tsx
+index c6914cf..4cf7dc1 100644
+--- a/apps/web/src/features/chat/MessageItem.test.tsx
++++ b/apps/web/src/features/chat/MessageItem.test.tsx
+@@ -78,4 +78,74 @@ describe("MessageItem", () => {
+     expect(screen.getByText("Ahmet")).toBeInTheDocument();
+     expect(screen.queryByText("BOT")).not.toBeInTheDocument();
+   });
++
++  it("düzenleme modunda 4000 üstü sayaç kırmızı olur, aşımda Enter kaydetmez, 422 TOO_LONG uyarısı görünür", async () => {
++    const { fireEvent, waitFor } = await import("@testing-library/react");
++    const { vi } = await import("vitest");
++    const { useChatUi } = await import("./chatUi.ts");
++    const { api } = await import("../../api/endpoints.ts");
++    const { ApiError } = await import("../../api/client.ts");
++
++    useStore.setState({
++      me: { id: "me", username: "me", display_name: null, avatar_id: null, banner_id: null, about: null, bot: false, email: "", email_verified: true, instance_admin: false, date_of_birth: "", locale: "tr" },
++      guilds: {},
++      settings: { theme: "dark", message_density: "cozy", font_scale: 1, developer_mode: false, locale: "tr" },
++    });
++
++    const editSpy = vi.spyOn(api, "editMessage");
++
++    const myMessage: TimelineMessage = {
++      id: "m_edit_1",
++      channel_id: "c1",
++      author: { id: "me", username: "me", display_name: "Me", avatar_id: null, banner_id: null, about: null, bot: false },
++      content: "Eski mesaj",
++      attachments: [],
++      reactions: [],
++      timestamp: new Date().toISOString(),
++      edited_timestamp: null,
++      type: 0,
++      mention_everyone: false,
++      mentions: [],
++      mention_roles: [],
++    };
++
++    useChatUi.setState({ editingId: "m_edit_1" });
++    render(<MessageItem message={myMessage} head={true} />);
++
++    const textarea = screen.getByLabelText("Düzenle") as HTMLTextAreaElement;
++    expect(textarea).toBeInTheDocument();
++
++    // 5000 karakter yaz/yapıştır
++    const text5000 = "b".repeat(5000);
++    fireEvent.change(textarea, { target: { value: text5000 } });
++
++    // Sayaç görünür ve kırmızı (data-over="true")
++    const counter = screen.getByTestId("edit-char-counter");
++    expect(counter).toBeInTheDocument();
++    expect(counter).toHaveAttribute("data-over", "true");
++
++    // Enter basıldığında aşım nedeniyle kaydetme çağrılmaz
++    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
++    expect(editSpy).not.toHaveBeenCalled();
++
++    // 422 TOO_LONG hatası simülasyonu
++    editSpy.mockRejectedValueOnce(
++      new ApiError(422, {
++        code: "VALIDATION_FAILED",
++        message: "Girdi doğrulanamadı.",
++        errors: [{ field: "content", code: "TOO_LONG", message: "Mesaj en çok 4000 karakter olabilir.", max: 4000, actual: 4001 }],
++      }),
++    );
++
++    fireEvent.change(textarea, { target: { value: "Gecerli uzunluk" } });
++    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
++
++    await waitFor(() => {
++      expect(editSpy).toHaveBeenCalledTimes(1);
++    });
++
++    // 422 hata metni görünür
++    expect(await screen.findByText("Mesaj çok uzun: 4001 / 4000 karakter")).toBeInTheDocument();
++  });
+ });
++
+diff --git a/apps/web/src/features/chat/MessageItem.tsx b/apps/web/src/features/chat/MessageItem.tsx
+index 46bc0e4..10b8e8a 100644
+--- a/apps/web/src/features/chat/MessageItem.tsx
++++ b/apps/web/src/features/chat/MessageItem.tsx
+@@ -1,7 +1,8 @@
+-import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
++import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+ import { CornerUpRight, Ellipsis, File as FileIcon, ImageOff, SmilePlus, UserPlus } from "lucide-react";
+-import { PERMISSIONS, type Attachment } from "@chatapp/api-types";
++import { MESSAGE_CONTENT_MAX, PERMISSIONS, type Attachment } from "@chatapp/api-types";
+ import { api } from "../../api/endpoints.ts";
++import { ApiError } from "../../api/client.ts";
+ import { t } from "../../i18n/index.ts";
+ import { roleColorCss } from "../../lib/color.ts";
+ import type { TimelineMessage } from "../../lib/group.ts";
+@@ -215,6 +216,7 @@ function ReplyPreview({ m, guildId }: { m: TimelineMessage; guildId?: string })
+ function EditBox({ m }: { m: TimelineMessage }) {
+   const [text, setText] = useState(m.content);
+   const [busy, setBusy] = useState(false);
++  const [warn, setWarn] = useState<string | null>(null);
+   const ref = useRef<HTMLTextAreaElement>(null);
+   useEffect(() => {
+     const el = ref.current;
+@@ -223,8 +225,14 @@ function EditBox({ m }: { m: TimelineMessage }) {
+       el.setSelectionRange(el.value.length, el.value.length);
+     }
+   }, []);
++  const charCount = useMemo(() => [...text].length, [text]);
++  const isOverLimit = charCount > MESSAGE_CONTENT_MAX;
++  const showCounter = charCount >= Math.floor(MESSAGE_CONTENT_MAX * 0.9);
++  const remaining = MESSAGE_CONTENT_MAX - charCount;
++
+   const cancel = () => useChatUi.getState().startEdit(null);
+   const save = async () => {
++    if (isOverLimit) return;
+     const v = text.trim();
+     if (!v || v === m.content) return cancel();
+     setBusy(true);
+@@ -232,7 +240,20 @@ function EditBox({ m }: { m: TimelineMessage }) {
+       await editMessage(m.channel_id, m.id, v);
+       cancel();
+     } catch (e) {
+-      toast.error(errorText(e));
++      if (e instanceof ApiError && e.status === 422) {
++        const contentErr = e.body?.errors?.find((x) => x.field === "content");
++        if (contentErr?.code === "TOO_LONG") {
++          const actual = contentErr.actual ?? [...v].length;
++          const max = contentErr.max ?? MESSAGE_CONTENT_MAX;
++          setWarn(t("composer.tooLong", { actual, max }));
++        } else if (contentErr?.message) {
++          setWarn(contentErr.message);
++        } else {
++          setWarn(errorText(e));
++        }
++      } else {
++        toast.error(errorText(e));
++      }
+       setBusy(false);
+     }
+   };
+@@ -245,18 +266,33 @@ function EditBox({ m }: { m: TimelineMessage }) {
+         rows={Math.min(8, text.split("\n").length)}
+         disabled={busy}
+         aria-label={t("msg.edit")}
+-        onChange={(e) => setText(e.target.value)}
++        onChange={(e) => {
++          setText(e.target.value);
++          setWarn(null);
++        }}
+         onKeyDown={(e) => {
+           if (e.key === "Escape") {
+             e.stopPropagation();
+             cancel();
+           } else if (e.key === "Enter" && !e.shiftKey) {
+             e.preventDefault();
+-            void save();
++            if (!isOverLimit) void save();
+           }
+         }}
+       />
+-      <span className={css.editHint}>{t("msg.edit.hint")}</span>
++      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++        <span className={css.editHint}>{t("msg.edit.hint")}</span>
++        {showCounter && (
++          <span
++            className={css.charCounter}
++            data-over={isOverLimit}
++            data-testid="edit-char-counter"
++          >
++            {remaining}
++          </span>
++        )}
++      </div>
++      {warn && <div className={css.warn} role="alert">{warn}</div>}
+     </div>
+   );
+ }
+diff --git a/apps/web/src/features/chat/chat.module.css b/apps/web/src/features/chat/chat.module.css
+index ceb719f..d1ee11c 100644
+--- a/apps/web/src/features/chat/chat.module.css
++++ b/apps/web/src/features/chat/chat.module.css
+@@ -107,6 +107,10 @@ button.mention:hover { text-decoration: underline; }
+ .typing { height: var(--hk-font-line-height-xs); padding: 0 var(--hk-space-1); margin-top: var(--hk-space-1); font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); color: var(--hk-text-muted); }
+ .typing strong { font-weight: var(--hk-font-weight-semibold); color: var(--hk-text-secondary); }
+ .warn { color: var(--hk-warning-text); font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); padding: var(--hk-space-1) var(--hk-space-3) 0; }
++.charCounter { font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); padding: 0 var(--hk-space-1); align-self: center; font-variant-numeric: tabular-nums; color: var(--hk-text-muted); }
++.charCounter[data-over="true"] { color: var(--hk-danger-text); font-weight: var(--hk-font-weight-semibold); }
++.sendAsFileBtn { font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); padding: var(--hk-space-0_5) var(--hk-space-2); border-radius: var(--hk-radius-sm); background: var(--hk-bg-surface); border: var(--hk-border-width) solid var(--hk-border-subtle); color: var(--hk-text-link); cursor: pointer; align-self: center; }
++.sendAsFileBtn:hover { background: var(--hk-bg-hover); text-decoration: underline; }
+ .suggest { position: absolute; left: var(--hk-space-4); right: var(--hk-space-4); bottom: 100%; margin-bottom: var(--hk-space-1); z-index: var(--hk-z-dropdown); background: var(--hk-bg-overlay); border-radius: var(--hk-radius-lg); box-shadow: var(--hk-shadow-overlay); padding: var(--hk-space-1_5); max-height: calc(var(--hk-size-row-menu-item) * 8); overflow-y: auto; }
+ .suggestItem { display: flex; align-items: center; gap: var(--hk-space-2); min-height: var(--hk-size-row-menu-item); padding: 0 var(--hk-space-2); border-radius: var(--hk-radius-sm); width: 100%; text-align: left; color: var(--hk-text-secondary); }
+ .suggestItem[data-active="true"] { background: var(--hk-bg-active); color: var(--hk-text-primary); }
+diff --git a/apps/web/src/i18n/tr.ts b/apps/web/src/i18n/tr.ts
+index 670e2e2..464ea16 100644
+--- a/apps/web/src/i18n/tr.ts
++++ b/apps/web/src/i18n/tr.ts
+@@ -155,6 +155,7 @@ export const tr = {
+   "msg.reply.deleted": "Orijinal mesaj silindi", "msg.reply.jump": "{name} adlı kişinin mesajına git",
+   "md.unknownUser": "bilinmeyen kullanıcı", "md.unknownRole": "bilinmeyen rol", "md.unknownChannel": "bilinmeyen kanal",
+   "composer.placeholder": "#{name} kanalına mesaj gönder", "composer.noPermission": "Bu kanala mesaj gönderme iznin yok", "composer.attach": "Dosya ekle", "composer.emoji": "Emoji", "composer.send": "Gönder",
++  "composer.tooLong": "Mesaj çok uzun: {actual} / {max} karakter", "composer.sendAsFile": "Dosya olarak gönder",
+   "composer.replying": "{name} adlı kişiye yanıt veriyorsun", "composer.mentionOn": "@bahset açık", "composer.mentionOff": "@bahset kapalı", "composer.cancelReply": "Yanıtı iptal et", "composer.suggestions": "Öneriler",
+   "composer.everyone.title": "Herkese bildirim gidecek", "composer.everyone.desc": "{n} kişiye bildirim gidecek. Göndermek istiyor musun?", "sug.role": "rol",
+   "typing.one": "yazıyor…", "typing.two": "yazıyor…", "typing.and": "ve", "typing.several": "Birkaç kişi yazıyor…",
+diff --git a/apps/web/src/mock/handlers.ts b/apps/web/src/mock/handlers.ts
+index ab9c5ac..099391b 100644
+--- a/apps/web/src/mock/handlers.ts
++++ b/apps/web/src/mock/handlers.ts
+@@ -1,7 +1,7 @@
+ /** MSW REST işleyicileri — sözleşmeye (contracts/out/openapi.yaml) uyan sahte uçlar, `db.ts` üzerinde çalışır. */
+ import { http, HttpResponse, type HttpHandler } from "msw";
+ import type { Attachment, AuditLogAction, Channel, GuildMember, InviteWithMetadata, Message, Role } from "@chatapp/api-types";
+-import { ChannelType, PERMISSIONS } from "@chatapp/api-types";
++import { ChannelType, MESSAGE_CONTENT_MAX, PERMISSIONS } from "@chatapp/api-types";
+ import { cmpId } from "../lib/snowflake.ts";
+ import { highestPosition, parseBits } from "../lib/perm.ts";
+ import * as adm from "./adminData.ts";
+@@ -478,7 +478,7 @@ def("post", "/v1/channels/:channelId/messages", async (c) => {
+   const content = String(c.body.content ?? "");
+   const ids: string[] = c.body.attachment_ids ?? [];
+   if (!content.trim() && ids.length === 0) return fail(400, "VALIDATION_FAILED", "Mesaj boş olamaz");
+-  if (content.length > 4000) return fail(400, "VALIDATION_FAILED", "Mesaj çok uzun");
++  if ([...content].length > MESSAGE_CONTENT_MAX) return fail(400, "VALIDATION_FAILED", "Mesaj çok uzun");
+   if (ids.length) need(g, c.userId, P.ATTACH_FILES, ch.id);
+   if (c.body.nonce) {
+     const dup = (server.messages.get(ch.id) ?? []).find((m) => m.nonce === c.body.nonce && m.author.id === c.userId);
+diff --git a/contracts/main.tsp b/contracts/main.tsp
+index 391883f..c068701 100644
+--- a/contracts/main.tsp
++++ b/contracts/main.tsp
+@@ -6,6 +6,7 @@ import "@typespec/rest";
+ import "@typespec/openapi";
+ import "@typespec/openapi3";
+ import "./src/common.tsp";
++import "./src/limits.tsp";
+ import "./src/models.tsp";
+ import "./src/auth.tsp";
+ import "./src/users.tsp";
+diff --git a/contracts/out/openapi.yaml b/contracts/out/openapi.yaml
+index 5d9f52a..533686c 100644
+--- a/contracts/out/openapi.yaml
++++ b/contracts/out/openapi.yaml
+@@ -5001,6 +5001,14 @@ components:
+           description: 'Alan düzeyi kod: REQUIRED, TOO_SHORT, TOO_LONG, INVALID_FORMAT, OUT_OF_RANGE, TAKEN, WEAK, LINK_INVALID, LINK_EXPIRED, LINK_USED, EMAIL_NOT_VERIFIED ...'
+         message:
+           type: string
++        max:
++          type: integer
++          format: int64
++          description: Sayısal/uzunluk sınırlarında üst sınır (ör. TOO_LONG, OUT_OF_RANGE).
++        actual:
++          type: integer
++          format: int64
++          description: Ölçülen gerçek değer/uzunluk (ör. TOO_LONG, OUT_OF_RANGE).
+       description: Alan doğrulama hatası (422). `field` JSON yolu, ör. `password` ya da `permission_overwrites.0.allow`.
+     ForgotPasswordRequest:
+       type: object
+@@ -6040,6 +6048,13 @@ components:
+           type: string
+           format: date-time
+       description: 'Yönetim görünümü (8.5): önizleme + kullanım bilgisi.'
++    Limits:
++      type: integer
++      enum:
++        - 4000
++      description: Sınır sabitleri (Go ve TS üretimi için sayısal enum).
++      x-enum-varnames:
++        - MESSAGE_CONTENT_MAX
+     LoginRequest:
+       type: object
+       required:
+diff --git a/contracts/src/common.tsp b/contracts/src/common.tsp
+index 44dc729..d462e7a 100644
+--- a/contracts/src/common.tsp
++++ b/contracts/src/common.tsp
+@@ -63,6 +63,12 @@ model FieldError {
+   code: string;
+ 
+   message: string;
++
++  /** Sayısal/uzunluk sınırlarında üst sınır (ör. TOO_LONG, OUT_OF_RANGE). */
++  max?: int64;
++
++  /** Ölçülen gerçek değer/uzunluk (ör. TOO_LONG, OUT_OF_RANGE). */
++  actual?: int64;
+ }
+ 
+ /**
+diff --git a/contracts/src/limits.tsp b/contracts/src/limits.tsp
+new file mode 100644
+index 0000000..fdfa27e
+--- /dev/null
++++ b/contracts/src/limits.tsp
+@@ -0,0 +1,9 @@
++namespace ChatApp;
++
++/** Mesaj içerik uzunluğu üst sınırı (K64, Dalga 1 tek doğruluk kaynağı). */
++const MESSAGE_CONTENT_MAX = 4000;
++
++/** Sınır sabitleri (Go ve TS üretimi için sayısal enum). */
++enum Limits {
++  MESSAGE_CONTENT_MAX: 4000,
++}
+diff --git a/contracts/src/messages.tsp b/contracts/src/messages.tsp
+index bbe93d3..2278eec 100644
+--- a/contracts/src/messages.tsp
++++ b/contracts/src/messages.tsp
+@@ -18,7 +18,7 @@ model AllowedMentions {
+ 
+ model CreateMessageRequest {
+   /** ≤4000. `content` ya da `attachment_ids`'ten en az biri dolu olmalı. */
+-  @maxLength(4000) content?: string;
++  @maxLength(MESSAGE_CONTENT_MAX) content?: string;
+ 
+   /** İstemci üretir (≤25 karakter); iyimser gösterimi eşlemek için MESSAGE_CREATE'de geri gelir. Aynı nonce 2 dk içinde tekrar gelirse aynı mesaj döner (idempotent). */
+   @maxLength(25) nonce?: string;
+@@ -34,7 +34,7 @@ model CreateMessageRequest {
+ 
+ model UpdateMessageRequest {
+   /** Yalnız yazar düzenler. */
+-  @maxLength(4000) content: string;
++  @maxLength(MESSAGE_CONTENT_MAX) content: string;
+ }
+ 
+ @tag("messages")
+diff --git a/packages/api-types/scripts/postgen.mjs b/packages/api-types/scripts/postgen.mjs
+index fb1cac7..c5c5e23 100644
+--- a/packages/api-types/scripts/postgen.mjs
++++ b/packages/api-types/scripts/postgen.mjs
+@@ -27,6 +27,11 @@ for (const name of Object.keys(schemas).sort()) {
+ }
+ out.push("");
+ 
++if (schemas.Limits) {
++  out.push("export const MESSAGE_CONTENT_MAX = Limits.MESSAGE_CONTENT_MAX;");
++  out.push("");
++}
++
+ const bits = schemas.PermissionBit;
+ if (!bits) throw new Error("PermissionBit şeması yok");
+ out.push("/** İzin değerleri (`1n << bit`). API'de string taşınır: `BigInt(role.permissions) & PERMISSIONS.SEND_MESSAGES`. */");
+diff --git a/packages/api-types/src/constants.gen.ts b/packages/api-types/src/constants.gen.ts
+index 81efc14..e91fc1f 100644
+--- a/packages/api-types/src/constants.gen.ts
++++ b/packages/api-types/src/constants.gen.ts
+@@ -200,6 +200,10 @@ export type InviteAcceptResult = components["schemas"]["InviteAcceptResult"];
+ export type InviteChannel = components["schemas"]["InviteChannel"];
+ export type InviteGuild = components["schemas"]["InviteGuild"];
+ export type InviteWithMetadata = components["schemas"]["InviteWithMetadata"];
++export type Limits = components["schemas"]["Limits"];
++export const Limits = {
++  MESSAGE_CONTENT_MAX: 4000,
++} as const satisfies Record<string, Limits>;
+ export type LoginRequest = components["schemas"]["LoginRequest"];
+ export type MediaDiagnosisCode = components["schemas"]["MediaDiagnosisCode"];
+ export type MediaSampleInput = components["schemas"]["MediaSampleInput"];
+@@ -358,6 +362,8 @@ export type VoiceState = components["schemas"]["VoiceState"];
+ export type VoiceStateUpdateDispatch = components["schemas"]["VoiceStateUpdateDispatch"];
+ export type VoiceTrackSource = components["schemas"]["VoiceTrackSource"];
+ 
++export const MESSAGE_CONTENT_MAX = Limits.MESSAGE_CONTENT_MAX;
++
+ /** İzin değerleri (`1n << bit`). API'de string taşınır: `BigInt(role.permissions) & PERMISSIONS.SEND_MESSAGES`. */
+ export const PERMISSIONS = {
+   CREATE_INSTANT_INVITE: 1n << 0n,
+diff --git a/packages/api-types/src/openapi.gen.ts b/packages/api-types/src/openapi.gen.ts
+index 8cb8122..fba7be6 100644
+--- a/packages/api-types/src/openapi.gen.ts
++++ b/packages/api-types/src/openapi.gen.ts
+@@ -2275,6 +2275,16 @@ export interface components {
+             /** @description Alan düzeyi kod: REQUIRED, TOO_SHORT, TOO_LONG, INVALID_FORMAT, OUT_OF_RANGE, TAKEN, WEAK, LINK_INVALID, LINK_EXPIRED, LINK_USED, EMAIL_NOT_VERIFIED ... */
+             code: string;
+             message: string;
++            /**
++             * Format: int64
++             * @description Sayısal/uzunluk sınırlarında üst sınır (ör. TOO_LONG, OUT_OF_RANGE).
++             */
++            max?: number;
++            /**
++             * Format: int64
++             * @description Ölçülen gerçek değer/uzunluk (ör. TOO_LONG, OUT_OF_RANGE).
++             */
++            actual?: number;
+         };
+         ForgotPasswordRequest: {
+             email: string;
+@@ -2701,6 +2711,11 @@ export interface components {
+             /** Format: date-time */
+             created_at: string;
+         };
++        /**
++         * @description Sınır sabitleri (Go ve TS üretimi için sayısal enum).
++         * @enum {integer}
++         */
++        Limits: 4000;
+         LoginRequest: {
+             email: string;
+             password: string;
+@@ -7156,6 +7171,7 @@ export const guildRoleUpdateDispatchTValues: ReadonlyArray<FlattenedDeepRequired
+ export const guildTemplateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GuildTemplate"]> = ["empty", "friends", "community"];
+ export const guildUpdateDispatchOpValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GuildUpdateDispatch"]["op"]> = [0];
+ export const guildUpdateDispatchTValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GuildUpdateDispatch"]["t"]> = ["GUILD_UPDATE"];
++export const limitsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Limits"]> = [4000];
+ export const mediaDiagnosisCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MediaDiagnosisCode"]> = ["ok", "capture", "encoder_cpu", "encoder_bandwidth", "layer_selection", "network_loss", "relay_tcp"];
+ export const mediaTelemetryKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MediaTelemetryKind"]> = ["audio", "video", "screen"];
+ export const mediaTelemetryRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MediaTelemetryRole"]> = ["publisher", "subscriber"];
+diff --git a/services/chatapp/internal/app/z4b_integration_test.go b/services/chatapp/internal/app/z4b_integration_test.go
+index f63b442..e0004d3 100644
+--- a/services/chatapp/internal/app/z4b_integration_test.go
++++ b/services/chatapp/internal/app/z4b_integration_test.go
+@@ -33,7 +33,6 @@ func TestMessagesCRUD(t *testing.T) {
+ 	e := testenv.New(t)
+ 	o, b, gid, ch := twoUsers(t, e, "mo", "mb")
+ 
+-	// Oluştur: içerik doğrulama, boş/aşırı uzun, bahsetme ayrıştırma, nonce tekilleştirme.
+ 	e.Do("POST", msgPath(ch), o.Token, obj{"content": "   "}).Expect(422, "VALIDATION_FAILED")
+ 	e.Do("POST", msgPath(ch), o.Token, obj{"content": strings.Repeat("a", 4001)}).Expect(422, "VALIDATION_FAILED")
+ 	m1 := e.Do("POST", msgPath(ch), o.Token, obj{"content": "selam <@" + b.ID + "> @everyone", "nonce": "n1"}).Expect(200, "").Map()
+@@ -369,3 +368,26 @@ func TestVoiceJoinGrants(t *testing.T) {
+ 	}
+ 	_ = json.Marshal
+ }
++
++func TestMessageContentLimits_Integration(t *testing.T) {
++	e := testenv.New(t)
++	o, _, _, ch := twoUsers(t, e, "limito", "limitb")
++
++	// 1. 4001 rune -> 422 TOO_LONG, max=4000, actual=4001
++	res4001 := e.Do("POST", msgPath(ch), o.Token, obj{"content": strings.Repeat("a", 4001)}).Expect(422, "VALIDATION_FAILED").Map()
++	errs := list(res4001["errors"])
++	if len(errs) != 1 {
++		t.Fatalf("beklenen 1 alan hatası, alınan: %v", errs)
++	}
++	f := errs[0].(obj)
++	if f["field"] != "content" || f["code"] != "TOO_LONG" {
++		t.Fatalf("beklenen content TOO_LONG, alınan: %v", f)
++	}
++	if f["max"].(float64) != 4000 || f["actual"].(float64) != 4001 {
++		t.Fatalf("beklenen max=4000 actual=4001, alınan max=%v actual=%v", f["max"], f["actual"])
++	}
++
++	// 2. 4000 emoji (çok baytlı Unicode, 16000 bayt UTF-8) -> 200 kabul
++	e.Do("POST", msgPath(ch), o.Token, obj{"content": strings.Repeat("😀", 4000)}).Expect(200, "")
++}
++
+diff --git a/services/chatapp/internal/message/handler.go b/services/chatapp/internal/message/handler.go
+index 769a051..39c8804 100644
+--- a/services/chatapp/internal/message/handler.go
++++ b/services/chatapp/internal/message/handler.go
+@@ -2,6 +2,7 @@ package message
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"net/http"
+ 	"regexp"
+ 	"slices"
+@@ -25,7 +26,7 @@ import (
+ )
+ 
+ const (
+-	maxContent     = 4000
++	maxContent     = int(gen.LimitsMESSAGECONTENTMAX)
+ 	nonceWindow    = 2 * time.Minute
+ 	maxEmojiPerMsg = 20
+ 	maxMentions    = 100
+@@ -280,8 +281,17 @@ func (h *Handler) parseMentions(ctx context.Context, q *dbq.Queries, ch *access.
+ }
+ 
+ func validateContent(content string, hasAttachments bool) error {
+-	if utf8.RuneCountInString(content) > maxContent {
+-		return bad("content", "TOO_LONG", "Mesaj en çok 4000 karakter olabilir.")
++	runes := utf8.RuneCountInString(content)
++	if runes > maxContent {
++		maxVal := int64(maxContent)
++		actualVal := int64(runes)
++		return api.Validation(gen.FieldError{
++			Field:   "content",
++			Code:    "TOO_LONG",
++			Message: fmt.Sprintf("Mesaj en çok %d karakter olabilir.", maxContent),
++			Max:     &maxVal,
++			Actual:  &actualVal,
++		})
+ 	}
+ 	if strings.TrimSpace(content) == "" && !hasAttachments {
+ 		return bad("content", "REQUIRED", "Mesaj boş olamaz.")
+diff --git a/services/chatapp/internal/message/handler_test.go b/services/chatapp/internal/message/handler_test.go
+new file mode 100644
+index 0000000..a5ea538
+--- /dev/null
++++ b/services/chatapp/internal/message/handler_test.go
+@@ -0,0 +1,75 @@
++package message
++
++import (
++	"errors"
++	"net/http"
++	"strings"
++	"testing"
++
++	"github.com/eirikaleid/chatapp/services/chatapp/internal/api"
++	"github.com/eirikaleid/chatapp/services/chatapp/internal/api/gen"
++)
++
++func TestValidateContent_Limits(t *testing.T) {
++	// 1. 4000 karakterlik metin kabul edilmeli
++	msg4000 := strings.Repeat("a", 4000)
++	if err := validateContent(msg4000, false); err != nil {
++		t.Fatalf("4000 ASCII karakter kabul edilmeliydi: %v", err)
++	}
++
++	// 2. 4000 emoji (çok baytlı Unicode, 16000 bayt) kabul edilmeli
++	emoji4000 := strings.Repeat("😀", 4000)
++	if err := validateContent(emoji4000, false); err != nil {
++		t.Fatalf("4000 emoji kabul edilmeliydi: %v", err)
++	}
++
++	// 3. 4001 rune -> 422 TOO_LONG, max=4000, actual=4001
++	msg4001 := strings.Repeat("a", 4001)
++	err := validateContent(msg4001, false)
++	if err == nil {
++		t.Fatal("4001 rune hata vermeliydi")
++	}
++
++	var apiErr *api.Error
++	if !errors.As(err, &apiErr) {
++		t.Fatalf("beklenen *api.Error, alınan %T", err)
++	}
++	if apiErr.Status != http.StatusUnprocessableEntity {
++		t.Errorf("beklenen durum 422, alınan %d", apiErr.Status)
++	}
++	if apiErr.Code != gen.ErrorCodeVALIDATIONFAILED {
++		t.Errorf("beklenen kod VALIDATION_FAILED, alınan %s", apiErr.Code)
++	}
++	if len(apiErr.Fields) != 1 {
++		t.Fatalf("beklenen 1 alan hatası, alınan %d", len(apiErr.Fields))
++	}
++	f := apiErr.Fields[0]
++	if f.Field != "content" {
++		t.Errorf("beklenen alan 'content', alınan '%s'", f.Field)
++	}
++	if f.Code != "TOO_LONG" {
++		t.Errorf("beklenen alan kodu 'TOO_LONG', alınan '%s'", f.Code)
++	}
++	if f.Max == nil || *f.Max != 4000 {
++		t.Errorf("beklenen max=4000, alınan %v", f.Max)
++	}
++	if f.Actual == nil || *f.Actual != 4001 {
++		t.Errorf("beklenen actual=4001, alınan %v", f.Actual)
++	}
++
++	// 4. 4001 emoji -> 422 TOO_LONG, max=4000, actual=4001
++	emoji4001 := strings.Repeat("😀", 4001)
++	errEmoji := validateContent(emoji4001, false)
++	if errEmoji == nil {
++		t.Fatal("4001 emoji hata vermeliydi")
++	}
++	if errors.As(errEmoji, &apiErr) {
++		fEmoji := apiErr.Fields[0]
++		if fEmoji.Max == nil || *fEmoji.Max != 4000 {
++			t.Errorf("beklenen max=4000, alınan %v", fEmoji.Max)
++		}
++		if fEmoji.Actual == nil || *fEmoji.Actual != 4001 {
++			t.Errorf("beklenen actual=4001, alınan %v", fEmoji.Actual)
++		}
++	}
++}
+diff --git a/services/chatapp/internal/platform/db/migrate_integration_test.go b/services/chatapp/internal/platform/db/migrate_integration_test.go
+index b34d8be..cfc4e6c 100644
+--- a/services/chatapp/internal/platform/db/migrate_integration_test.go
++++ b/services/chatapp/internal/platform/db/migrate_integration_test.go
+@@ -54,7 +54,132 @@ func TestMigrateUpDownUp(t *testing.T) {
+ 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'goose_db_version'`).Scan(&n); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	if n != 32 { // 00004: auth_tokens, 00005: connection_log, 00006: instance_settings, instance_audit_log, 00008: error_group, error_event, 00009: media_session, media_sample, sys_sample, sys_hourly, sys_daily, media_daily, 00010: admin_report
+-		t.Fatalf("tablo sayısı %d, beklenen 32", n)
++	if n != 35 { // 00004: auth_tokens, 00005: connection_log, 00006: instance_settings, instance_audit_log, 00008: error_group, error_event, 00009: media_session, media_sample, sys_sample, sys_hourly, sys_daily, media_daily, 00010: admin_report, 00013: channel_recipients, relationships, 00016: bot_applications
++		t.Fatalf("tablo sayısı %d, beklenen 35", n)
+ 	}
+ }
++
++func TestMessageContentLimitMigration(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
++	defer cancel()
++	admin := os.Getenv("CHATAPP_TEST_ADMIN_URL")
++	if admin == "" {
++		admin = "postgres://chatapp@127.0.0.1:54320/chatapp?sslmode=disable"
++	}
++	conn, err := pgx.Connect(ctx, admin)
++	if err != nil {
++		t.Fatalf("PG yok: %v", err)
++	}
++	defer conn.Close(ctx)
++	_, _ = conn.Exec(ctx, "DROP DATABASE IF EXISTS chatapp_limit_mig_test")
++	if _, err := conn.Exec(ctx, "CREATE DATABASE chatapp_limit_mig_test"); err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() {
++		c, err := pgx.Connect(context.Background(), admin)
++		if err == nil {
++			_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS chatapp_limit_mig_test WITH (FORCE)")
++			_ = c.Close(context.Background())
++		}
++	})
++
++	pool, err := Open(ctx, "postgres://chatapp@127.0.0.1:54320/chatapp_limit_mig_test?sslmode=disable")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer pool.Close()
++	log := slog.New(slog.NewTextHandler(io.Discard, nil))
++
++	// 1. En son sürüme migrate up yap
++	if err := Migrate(ctx, pool, MigrateUp, io.Discard, log); err != nil {
++		t.Fatalf("MigrateUp failed: %v", err)
++	}
++
++	// 2. Test verisi ekle
++	_, err = pool.Exec(ctx, `
++		INSERT INTO users (id, username, email, password_hash, date_of_birth, consents_accepted_at)
++		VALUES (1001, 'limittest', 'limit@example.com', 'hash', '2000-01-01', now());
++		INSERT INTO guilds (id, owner_id, name)
++		VALUES (2001, 1001, 'Limit Guild');
++		INSERT INTO channels (id, guild_id, type, name)
++		VALUES (3001, 2001, 0, 'limit-genel');
++	`)
++	if err != nil {
++		t.Fatalf("test fixtures failed: %v", err)
++	}
++
++	// 3. 5000 karakterlik içerik ekle (<= 16000 olmalı) -> Başarılı olmalı
++	long5k := make([]byte, 5000)
++	for i := range long5k {
++		long5k[i] = 'a'
++	}
++	_, err = pool.Exec(ctx, `
++		INSERT INTO messages (id, channel_id, guild_id, author_id, content)
++		VALUES (4001, 3001, 2001, 1001, $1)
++	`, string(long5k))
++	if err != nil {
++		t.Fatalf("5000 karakterlik mesaj eklenemedi (16000 gevşetmesi): %v", err)
++	}
++
++	// 4. 16001 karakterlik içerik ekle -> CHECK ihlali ile başarısız olmalı
++	tooLong16k := make([]byte, 16001)
++	for i := range tooLong16k {
++		tooLong16k[i] = 'b'
++	}
++	_, err = pool.Exec(ctx, `
++		INSERT INTO messages (id, channel_id, guild_id, author_id, content)
++		VALUES (4002, 3001, 2001, 1001, $1)
++	`, string(tooLong16k))
++	if err == nil {
++		t.Fatal("16001 karakterlik mesaj CHECK hatası vermedi")
++	}
++
++	// 5. 5000 karakterlik mesaj varken MigrateDown dene -> Hata vermeli (sessiz kırpma yok)
++	err = Migrate(ctx, pool, MigrateDown, io.Discard, log)
++	if err == nil {
++		t.Fatal("uzun mesaj varken MigrateDown hata vermedi")
++	}
++
++	// 6. 5000 karakterlik mesajı temizle
++	_, err = pool.Exec(ctx, `DELETE FROM messages WHERE id = 4001`)
++	if err != nil {
++		t.Fatalf("mesaj silinemedi: %v", err)
++	}
++
++	// 7. Şimdi MigrateDown dene -> Başarılı olmalı ve sınır 4000'e dönmeli
++	if err := Migrate(ctx, pool, MigrateDown, io.Discard, log); err != nil {
++		t.Fatalf("uzun mesaj yokken MigrateDown başarısız: %v", err)
++	}
++
++	// 8. 4001 karakterlik içerik ekle -> 4000 CHECK ihlali ile başarısız olmalı
++	long4001 := make([]byte, 4001)
++	for i := range long4001 {
++		long4001[i] = 'c'
++	}
++	_, err = pool.Exec(ctx, `
++		INSERT INTO messages (id, channel_id, guild_id, author_id, content)
++		VALUES (4003, 3001, 2001, 1001, $1)
++	`, string(long4001))
++	if err == nil {
++		t.Fatal("4000 sınırına dönüldüğünde 4001 karakterlik mesaj hata vermedi")
++	}
++
++	// 9. 4000 karakterlik içerik ekle -> Başarılı olmalı
++	long4000 := make([]byte, 4000)
++	for i := range long4000 {
++		long4000[i] = 'd'
++	}
++	_, err = pool.Exec(ctx, `
++		INSERT INTO messages (id, channel_id, guild_id, author_id, content)
++		VALUES (4004, 3001, 2001, 1001, $1)
++	`, string(long4000))
++	if err != nil {
++		t.Fatalf("4000 karakterlik mesaj eklenemedi: %v", err)
++	}
++
++	// 10. Tekrar MigrateUp yap
++	if err := Migrate(ctx, pool, MigrateUp, io.Discard, log); err != nil {
++		t.Fatalf("Son MigrateUp başarısız: %v", err)
++	}
++}
++
+diff --git a/services/chatapp/internal/platform/db/migrations/00017_message_content_limit.sql b/services/chatapp/internal/platform/db/migrations/00017_message_content_limit.sql
+new file mode 100644
+index 0000000..0945eb1
+--- /dev/null
++++ b/services/chatapp/internal/platform/db/migrations/00017_message_content_limit.sql
+@@ -0,0 +1,18 @@
++-- 00017_message_content_limit.sql: Mesaj içerik uzunluk CHECK sınırını 16000'e gevşet (tavan; K64, N3/N4).
++-- +goose Up
++-- +goose StatementBegin
++ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_content_check;
++ALTER TABLE messages ADD CONSTRAINT messages_content_check CHECK (char_length(content) <= 16000);
++-- +goose StatementEnd
++
++-- +goose Down
++-- +goose StatementBegin
++DO $$
++BEGIN
++    IF EXISTS (SELECT 1 FROM messages WHERE char_length(content) > 4000) THEN
++        RAISE EXCEPTION 'cannot rollback migration: messages with content length > 4000 exist';
++    END IF;
++END $$;
++ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_content_check;
++ALTER TABLE messages ADD CONSTRAINT messages_content_check CHECK (char_length(content) <= 4000);
++-- +goose StatementEnd

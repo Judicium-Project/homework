@@ -1,0 +1,13 @@
+id: e2e-dom-injection
+language: ts
+severity: error
+message: 'Do not create or inject DOM in the test; interact only with elements the real application renders.'
+metadata:
+  scope: e2e
+rule:
+  any:
+    - pattern: document.createElement($$$)
+    - pattern: $E.appendChild($$$)
+    - pattern: $E.insertAdjacentHTML($$$)
+    - pattern: $E.innerHTML = $V
+    - pattern: $E.outerHTML = $V

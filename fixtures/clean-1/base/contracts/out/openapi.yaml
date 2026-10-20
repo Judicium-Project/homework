@@ -1,0 +1,5414 @@
+openapi: 3.1.0
+info:
+  title: ChatApp API
+  version: 1.0.0
+  description: |-
+    ChatApp REST API v1.
+
+    - Kimlikler Snowflake (epoch 2015-01-01, K29), JSON'da **string**.
+    - İzin bit dizileri Discord v10 değerleriyle, 64-bit tamsayının ondalık **string** gösterimi.
+    - Kimlik doğrulama: `Authorization: Bearer <access_token>`. Access token login/register/refresh
+    yanıtının gövdesinde gelir (ömür `expires_in` sn). Refresh token yalnız `chatapp_rt`
+    HttpOnly çerezinde taşınır (Path=/v1/auth, SameSite=Strict).
+    - Hata gövdesi her zaman `ApiError`. Durumlar: 400 bozuk istek · 401 kimlik yok/geçersiz ·
+    403 izin yok · 404 yok ya da görme izni yok · 409 çakışma · 422 alan doğrulama ·
+    429 hız sınırı (`retry_after`) · 5xx yalnız sunucu hatası.
+    - Hoşgörülü okuyucu: istemciler bilinmeyen alanları yok sayar; v1'e yeni alan eklenebilir.
+    - Gateway (WebSocket) ayrı adreste: `GET /v1/gateway` ile bulunur; çerçeve modelleri
+    `Gateway*` şemalarıdır (components'te).
+tags:
+  - name: auth
+  - name: users
+  - name: guilds
+  - name: channels
+  - name: roles
+  - name: members
+  - name: bans
+  - name: invites
+  - name: messages
+  - name: attachments
+  - name: voice
+  - name: internal
+  - name: audit-log
+  - name: system
+paths:
+  /health:
+    get:
+      operationId: System_health
+      description: Süreç ayakta mı (bağımlılık denetlemez). api ve gateway rolünde aynı.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+      tags:
+        - system
+      security:
+        - {}
+  /ready:
+    get:
+      operationId: System_ready
+      description: 'Trafik almaya hazır mı: PG + NATS + Valkey ping. Biri başarısızsa 503.'
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+      tags:
+        - system
+      security:
+        - {}
+  /v1/attachments:
+    post:
+      operationId: Attachments_createUpload
+      description: İmzalı yükleme adresi (W-01). SeaweedFS S3, ömür 15 dk.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadTicket'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - attachments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadRequest'
+  /v1/attachments/{attachment_id}/complete:
+    post:
+      operationId: Attachments_complete
+      description: Nesne depoda var mı ve boyut tutuyor mu denetlenir → `ready`. Eksikse 409 UPLOAD_INCOMPLETE.
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - attachments
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadRequest'
+  /v1/attachments/{attachment_id}/url:
+    get:
+      operationId: Attachments_downloadUrl
+      description: Mesaj eki için taze imzalı indirme adresi (kanalı görme izni gerekir).
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - attachments
+  /v1/auth/beta-codes/check:
+    post:
+      operationId: Auth_checkBetaCode
+      description: 'Kayıt adım 1: beta kodu geçerli mi (kullanım sayacını artırmaz).'
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BetaCodeCheck'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BetaCodeCheckRequest'
+      security:
+        - {}
+  /v1/auth/email/resend:
+    post:
+      operationId: Auth_resendVerification
+      description: Doğrulama e-postasını yeniden gönderir (1.4; 60 sn bekleme → 429 `retry_after`). Zaten doğrulanmışsa bir şey yapmaz.
+      parameters: []
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+  /v1/auth/email/verify:
+    post:
+      operationId: Auth_verifyEmail
+      description: 'E-posta doğrulama (1.4). Bağlantı tek kullanımlık ve süreli; sorunlu bağlantı → 422 VALIDATION_FAILED, `errors[field=token].code`: LINK_INVALID (geçersiz) / LINK_EXPIRED (süresi geçmiş) / LINK_USED (kullanılmış ya da yerine yenisi gönderilmiş). Kimlik gerekmez (bağlantı başka tarayıcıda açılabilir).'
+      parameters: []
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      security:
+        - {}
+  /v1/auth/login:
+    post:
+      operationId: Auth_login
+      description: Giriş (1.1). Yanlış bilgi → 401 INVALID_CREDENTIALS (hangisi olduğu söylenmez); askı → 403 ACCOUNT_SUSPENDED.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      security:
+        - {}
+  /v1/auth/logout:
+    post:
+      operationId: Auth_logout
+      description: Bu oturumu kapatır, çerezi siler. Gateway bağlantısı INVALID_SESSION alır.
+      parameters: []
+      responses:
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+  /v1/auth/password/forgot:
+    post:
+      operationId: Auth_forgotPassword
+      description: Parolamı unuttum (1.5 adım 1). Hesap olsun olmasın her zaman 202 (hesap varlığı sızdırılmaz). IP başına hız sınırlı.
+      parameters: []
+      responses:
+        '202':
+          description: The request has been accepted for processing, but processing has not yet completed.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      security:
+        - {}
+  /v1/auth/password/reset:
+    post:
+      operationId: Auth_resetPassword
+      description: Yeni parola (1.5 adım 2). Başarıda tüm oturumlar kapanır (gateway INVALID_SESSION). Bağlantı hataları `verifyEmail` ile aynı.
+      parameters: []
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      security:
+        - {}
+  /v1/auth/refresh:
+    post:
+      operationId: Auth_refresh
+      description: '`chatapp_rt` çerezini döndürür (rotasyon; eski token yeniden kullanılırsa tüm aile iptal → 401).'
+      parameters:
+        - name: chatapp_rt
+          in: cookie
+          required: false
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      security:
+        - {}
+  /v1/auth/register:
+    post:
+      operationId: Auth_register
+      description: Kayıt (EKRANLAR 1.3). Geçersiz/tükenmiş beta kodu → 422 BETA_CODE_*; 18 altı → 422 UNDERAGE; kayıtlı e-posta → 409 EMAIL_TAKEN.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          headers:
+            Set-Cookie:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      security:
+        - {}
+  /v1/auth/sessions:
+    get:
+      operationId: Auth_listSessions
+      description: Aktif oturumlar (7.4), son kullanım yeniden eskiye.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActiveSession'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+  /v1/auth/sessions/revoke-others:
+    post:
+      operationId: Auth_revokeOtherSessions
+      description: Bu oturum dışındaki tüm oturumları kapatır.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeOthersResult'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+  /v1/auth/sessions/{session_id}:
+    delete:
+      operationId: Auth_revokeSession
+      description: Bir oturumu (ailesiyle) kapatır; erişim token'ı da hemen düşer. Başkasının ya da kapalı oturum → 404 NOT_FOUND.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+  /v1/auth/username-available:
+    get:
+      operationId: Auth_usernameAvailable
+      description: Kullanıcı adı anlık müsaitlik (1.3). Hız sınırlı.
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsernameAvailability'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - auth
+      security:
+        - {}
+  /v1/channels/{channel_id}:
+    get:
+      operationId: Channels_get
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+    patch:
+      operationId: Channels_update
+      description: MANAGE_CHANNELS (izin alanları için ayrıca MANAGE_ROLES).
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelRequest'
+    delete:
+      operationId: Channels_delete
+      description: MANAGE_CHANNELS. Kategori silinince alt kanallar köke iner.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+  /v1/channels/{channel_id}/invites:
+    post:
+      operationId: Invites_create
+      description: CREATE_INSTANT_INVITE.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteWithMetadata'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - invites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+  /v1/channels/{channel_id}/messages:
+    get:
+      operationId: Messages_list
+      description: |-
+        Geçmiş (A-03). `before` / `after` / `around`'dan en çok biri; hiçbiri yoksa en yeniler.
+        Yanıt her zaman **yeniden eskiye** sıralı. VIEW_CHANNEL + READ_MESSAGE_HISTORY.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: before
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: after
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: around
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 50
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+    post:
+      operationId: Messages_create
+      description: SEND_MESSAGES (G-01, A-02). DB + outbox aynı işlemde; MESSAGE_CREATE yayılır.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+  /v1/channels/{channel_id}/messages/{message_id}:
+    get:
+      operationId: Messages_get
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+    patch:
+      operationId: Messages_update
+      description: Yalnız yazar. MESSAGE_UPDATE yayılır.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMessageRequest'
+    delete:
+      operationId: Messages_delete
+      description: 'Yazar ya da MANAGE_MESSAGES (moderatör silmesi denetim kaydına düşer). Yumuşak silme (K32: 30 gün saklanır).'
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+  /v1/channels/{channel_id}/messages/{message_id}/ack:
+    post:
+      operationId: Messages_ack
+      description: Okundu işaretle; `last_read_message_id = message_id`, `mention_count = 0`. MESSAGE_ACK (yalnız kendine) yayılır.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AckRequest'
+  /v1/channels/{channel_id}/messages/{message_id}/reactions/{emoji}:
+    get:
+      operationId: Messages_listReactions
+      description: Tepki verenler (kullanıcı kimliğine göre artan).
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: emoji
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: after
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 25
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+  /v1/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me:
+    put:
+      operationId: Messages_addReaction
+      description: Tepki ekle. `emoji` = URL-encoded Unicode emoji. ADD_REACTIONS (mesajda zaten olan tepkiye katılmak için gerekmez).
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: emoji
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+    delete:
+      operationId: Messages_removeOwnReaction
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: emoji
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+  /v1/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/{user_id}:
+    delete:
+      operationId: Messages_removeUserReaction
+      description: Başkasının tepkisini kaldır. MANAGE_MESSAGES.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: emoji
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - messages
+  /v1/channels/{channel_id}/permissions/{overwrite_id}:
+    put:
+      operationId: Channels_putPermission
+      description: Tek overwrite ekle/değiştir. MANAGE_ROLES (kendi sahip olmadığın izni veremezsin).
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: overwrite_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutOverwriteRequest'
+    delete:
+      operationId: Channels_deletePermission
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: overwrite_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+  /v1/channels/{channel_id}/typing:
+    post:
+      operationId: Channels_typing
+      description: Yazıyor göstergesi (G-04). İstemci ~8 sn'de bir tekrarlar; TYPING_START yayılır (saklanmaz). SEND_MESSAGES.
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+  /v1/files/{file_id}:
+    get:
+      operationId: Attachments_publicFile
+      description: |-
+        Herkese açık görseller (avatar, banner, sunucu ikonu): kimlik doğrulamasız 302 → imzalı adres.
+        `<img src="/v1/files/{id}">` doğrudan kullanılabilir. Mesaj ekleri bu uçtan verilmez (404).
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '302':
+          description: Redirection
+          headers:
+            location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - attachments
+      security:
+        - {}
+  /v1/gateway:
+    get:
+      operationId: System_gateway
+      description: Gateway adresi (istemci bağlanmadan önce sorar).
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayInfo'
+      tags:
+        - system
+      security:
+        - {}
+  /v1/guilds:
+    post:
+      operationId: Guilds_create
+      description: Sunucu oluşturur; yanıt tam görüntü (kanallar, roller, oluşturan üye). GUILD_CREATE yayılır.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayGuild'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGuildRequest'
+  /v1/guilds/{guild_id}:
+    get:
+      operationId: Guilds_get
+      description: Üye değilse 404.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: with_counts
+          in: query
+          required: false
+          schema:
+            type: boolean
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+    patch:
+      operationId: Guilds_update
+      description: MANAGE_GUILD (8.1).
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGuildRequest'
+    delete:
+      operationId: Guilds_delete
+      description: Yalnız sahip. GUILD_DELETE yayılır.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+  /v1/guilds/{guild_id}/ack:
+    post:
+      operationId: Guilds_ack
+      description: Sunucudaki tüm görünür kanalları okundu işaretle (2.1 sağ tık).
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+  /v1/guilds/{guild_id}/audit-logs:
+    get:
+      operationId: AuditLog_list
+      description: VIEW_AUDIT_LOG (8.7).
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: action_type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AuditLogAction'
+          explode: false
+        - name: before
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 50
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - audit-log
+  /v1/guilds/{guild_id}/bans:
+    get:
+      operationId: Bans_list
+      description: BAN_MEMBERS. Kullanıcı kimliğine göre artan; `before`/`after` kullanıcı kimliği.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: before
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: after
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 100
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ban'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - bans
+  /v1/guilds/{guild_id}/bans/{user_id}:
+    get:
+      operationId: Bans_get
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ban'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - bans
+    put:
+      operationId: Bans_create
+      description: Yasakla (9.1). Üyeyse atılır. GUILD_BAN_ADD + GUILD_MEMBER_REMOVE (+ silinen mesajlar için MESSAGE_DELETE) yayılır.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - bans
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBanRequest'
+    delete:
+      operationId: Bans_remove
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - bans
+  /v1/guilds/{guild_id}/channels:
+    get:
+      operationId: Channels_list
+      description: Kullanıcının VIEW_CHANNEL izni olanlar.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+    post:
+      operationId: Channels_create
+      description: MANAGE_CHANNELS. CHANNEL_CREATE yayılır.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequest'
+    patch:
+      operationId: Channels_reorder
+      description: Toplu sıralama/taşıma (sürükle-bırak). MANAGE_CHANNELS. Her değişen kanal için CHANNEL_UPDATE.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChannelPosition'
+  /v1/guilds/{guild_id}/invites:
+    get:
+      operationId: Invites_listForGuild
+      description: MANAGE_GUILD (8.5). Yalnız geçerli davetler.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InviteWithMetadata'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - invites
+  /v1/guilds/{guild_id}/members:
+    get:
+      operationId: Members_list
+      description: Sayfalı (8.4). `after` = kullanıcı kimliği (artan sıra). `query` ad/takma ad öneki; `role_id` filtresi.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: after
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 100
+          explode: false
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          explode: false
+        - name: role_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GuildMember'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+  /v1/guilds/{guild_id}/members/@me:
+    patch:
+      operationId: Members_updateMe
+      description: Kendi sunucu profilim (7.2 sunucu başına profil).
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildMember'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMyMemberRequest'
+  /v1/guilds/{guild_id}/members/{user_id}:
+    get:
+      operationId: Members_get
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildMember'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+    patch:
+      operationId: Members_update
+      description: 'Rol hiyerarşisi: hedefin en yüksek rolü seninkine eşit/üstünse 403 ROLE_HIERARCHY. GUILD_MEMBER_UPDATE yayılır.'
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuildMember'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemberRequest'
+    delete:
+      operationId: Members_kick
+      description: At (9.1). KICK_MEMBERS + hiyerarşi; sahibe uygulanamaz.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+  /v1/guilds/{guild_id}/members/{user_id}/roles/{role_id}:
+    put:
+      operationId: Members_addRole
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+    delete:
+      operationId: Members_removeRole
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - members
+  /v1/guilds/{guild_id}/roles:
+    get:
+      operationId: Roles_list
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+    post:
+      operationId: Roles_create
+      description: MANAGE_ROLES. Yeni rol
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+    patch:
+      operationId: Roles_reorder
+      description: Sürükle-sırala. Kendi en yüksek rolünün üstüne taşıyamazsın (403 ROLE_HIERARCHY). Güncel listeyi döner.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/RolePosition'
+  /v1/guilds/{guild_id}/roles/member-counts:
+    get:
+      operationId: Roles_memberCounts
+      description: 'Rol başına üye sayısı (8.2): `{ "<role_id>": 3 }`.'
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                  format: int32
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+  /v1/guilds/{guild_id}/roles/{role_id}:
+    patch:
+      operationId: Roles_update
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+    delete:
+      operationId: Roles_delete
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - roles
+  /v1/guilds/{guild_id}/transfer-ownership:
+    post:
+      operationId: Guilds_transferOwnership
+      description: 'Yalnız sahip (8.1 tehlikeli bölge). Denetim kaydı: GUILD_UPDATE owner_id.'
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guild'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - guilds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+  /v1/internal/livekit/webhook:
+    post:
+      operationId: VoiceWebhook_livekitWebhook
+      parameters:
+        - name: authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - internal
+      requestBody:
+        required: true
+        content:
+          application/webhook+json:
+            schema:
+              contentMediaType: application/webhook+json
+      security:
+        - {}
+  /v1/invites/{code}:
+    get:
+      operationId: Invites_preview
+      description: Önizleme (4.5). Kimlik doğrulaması isteğe bağlı. Geçersiz/süresi geçmiş → 404 UNKNOWN_INVITE.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - invites
+      security:
+        - {}
+        - BearerAuth: []
+    post:
+      operationId: Invites_accept
+      description: Kabul. Yasaklı → 403 BANNED_FROM_GUILD. Yeni üyede GUILD_CREATE (kendisine) + GUILD_MEMBER_ADD yayılır.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteAcceptResult'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - invites
+    delete:
+      operationId: Invites_revoke
+      description: Kendi davetini herkes, diğerlerini MANAGE_GUILD iptal eder.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/AuditReasonHeader'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - invites
+  /v1/users/@me:
+    get:
+      operationId: Users_getMe
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+    patch:
+      operationId: Users_updateMe
+      description: Profil (7.2).
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCurrentUserRequest'
+  /v1/users/@me/guilds:
+    get:
+      operationId: Users_listMyGuilds
+      description: Benim sunucularım (kısmi; ayrıntı gateway READY'de).
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Guild'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+  /v1/users/@me/guilds/{guild_id}:
+    delete:
+      operationId: Users_leaveGuild
+      description: Sunucudan ayrıl (4.2). Sahip → 409 OWNER_CANNOT_LEAVE.
+      parameters:
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+  /v1/users/@me/read-states:
+    get:
+      operationId: Users_listReadStates
+      description: Tüm görünür kanallar için okunmamış durumu (READY'de de gelir).
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReadState'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+  /v1/users/@me/settings:
+    get:
+      operationId: Users_getSettings
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+    patch:
+      operationId: Users_updateSettings
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserSettingsRequest'
+  /v1/users/{user_id}:
+    get:
+      operationId: Users_get
+      description: Ortak sunucusu olan ya da kendisi olan kullanıcı; değilse 404.
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Snowflake'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - users
+  /v1/voice/join:
+    post:
+      operationId: Voice_join
+      description: Ses kanalına katıl. Başka kanaldaysa oradan çıkarılır (tek ses bağlantısı).
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceJoinResponse'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - voice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceJoinRequest'
+  /v1/voice/leave:
+    post:
+      operationId: Voice_leave
+      description: Ses kanalından ayrıl. VOICE_STATE_UPDATE (`channel_id = null`).
+      parameters: []
+      responses:
+        '204':
+          description: 204 yanıtı.
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - voice
+  /v1/voice/state:
+    patch:
+      operationId: Voice_updateState
+      description: Seste değilse 404.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceState'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      tags:
+        - voice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVoiceStateRequest'
+security:
+  - BearerAuth: []
+components:
+  parameters:
+    AuditReasonHeader:
+      name: X-Audit-Log-Reason
+      in: header
+      required: false
+      schema:
+        type: string
+  schemas:
+    AckRequest:
+      type: object
+      properties:
+        manual:
+          type: boolean
+          description: '`true` → "okunmadı işaretle" (son okunanı geriye alabilir). Varsayılan: yalnız ileri gider.'
+      description: Okundu işareti.
+    ActiveSession:
+      type: object
+      required:
+        - id
+        - family_id
+        - user_agent
+        - ip_prefix
+        - created_at
+        - last_used_at
+        - current
+        - grace_sibling
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        family_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: Refresh ailesi (ilk girişin oturum kimliği). Aynı ailedeki satırlar aynı cihazdır.
+        user_agent:
+          type: string
+          description: Ham User-Agent (≤300); cihaz/tarayıcı özetini istemci çıkarır.
+        ip_prefix:
+          type: string
+          description: "IP'nin kısaltılmış hâli: IPv4 /24 (`203.0.113.x`), IPv6 /48 (`2001:db8:1::/48`). Tam IP API'de gösterilmez."
+        created_at:
+          type: string
+          format: date-time
+          description: Ailenin ilk girişi.
+        last_used_at:
+          type: string
+          format: date-time
+          description: Son token yenileme (erişim token'ı ömrü kadar, ≤15 dk, gecikmeli).
+        current:
+          type: boolean
+          description: İsteği yapan oturum (bu cihaz).
+        grace_sibling:
+          type: boolean
+          description: Refresh hoşgörü penceresiyle açılmış kardeş oturum (K42; aynı cihazın paralel sekmesi).
+      description: Aktif oturum (EKRANLAR 7.4). Bir satır = bir refresh ailesinin canlı halkası. Kapatma tüm aileyi (hoşgörü kardeşleri dahil) iptal eder.
+    AllowedMentionType:
+      type: string
+      enum:
+        - roles
+        - users
+        - everyone
+    AllowedMentions:
+      type: object
+      properties:
+        parse:
+          type: array
+          items:
+            $ref: '#/components/schemas/AllowedMentionType'
+        replied_user:
+          type: boolean
+          description: Yanıtta yanıtlanan kişiye bildirim gitsin mi (5.2 "
+    ApiError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+          description: Yalnız 422'de dolu.
+        retry_after:
+          type: number
+          format: double
+          description: "Yalnız 429'da: kaç saniye sonra yeniden denenmeli."
+        suspended_until:
+          type: string
+          format: date-time
+          description: "Yalnız ACCOUNT_SUSPENDED'da: askının bitişi (süresizse yok)."
+      description: |-
+        Tüm hata yanıtlarının tek biçimi (OpenAPI `default` yanıtı). İç ayrıntı (SQL, yığın izi,
+        dosya yolu) asla içermez. HTTP durumu `code`'la tutarlıdır (bkz. servis açıklaması);
+        henüz yazılmamış uç 501 NOT_IMPLEMENTED döner.
+    Attachment:
+      type: object
+      required:
+        - id
+        - filename
+        - content_type
+        - size
+        - url
+        - url_expires_at
+        - width
+        - height
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        filename:
+          type: string
+        content_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: Bayt.
+        url:
+          anyOf:
+            - type: string
+              format: uri
+            - type: 'null'
+          description: İmzalı indirme adresi (kısa ömürlü). Süresi geçince `GET /v1/attachments/{id}/url`.
+        url_expires_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        width:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+        height:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/AttachmentStatus'
+    AttachmentPurpose:
+      type: string
+      enum:
+        - message
+        - avatar
+        - banner
+        - guild_icon
+    AttachmentStatus:
+      type: string
+      enum:
+        - pending
+        - ready
+        - blocked
+    AuditLogAction:
+      type: integer
+      enum:
+        - 1
+        - 10
+        - 11
+        - 12
+        - 13
+        - 14
+        - 15
+        - 20
+        - 22
+        - 23
+        - 24
+        - 25
+        - 26
+        - 27
+        - 30
+        - 31
+        - 32
+        - 40
+        - 42
+        - 72
+        - 73
+      description: Discord v10 denetim kaydı eylem kodları (Beta 0 alt kümesi). Sahiplik devri = GUILD_UPDATE (`owner_id` değişimi).
+      x-enum-varnames:
+        - GUILD_UPDATE
+        - CHANNEL_CREATE
+        - CHANNEL_UPDATE
+        - CHANNEL_DELETE
+        - CHANNEL_OVERWRITE_CREATE
+        - CHANNEL_OVERWRITE_UPDATE
+        - CHANNEL_OVERWRITE_DELETE
+        - MEMBER_KICK
+        - MEMBER_BAN_ADD
+        - MEMBER_BAN_REMOVE
+        - MEMBER_UPDATE
+        - MEMBER_ROLE_UPDATE
+        - MEMBER_MOVE
+        - MEMBER_DISCONNECT
+        - ROLE_CREATE
+        - ROLE_UPDATE
+        - ROLE_DELETE
+        - INVITE_CREATE
+        - INVITE_DELETE
+        - MESSAGE_DELETE
+        - MESSAGE_BULK_DELETE
+    AuditLogChange:
+      type: object
+      required:
+        - key
+      properties:
+        key:
+          type: string
+        old_value: {}
+        new_value: {}
+      description: Değişen tek alan (önce → sonra). Değerler JSON'daki biçimiyle.
+    AuditLogEntry:
+      type: object
+      required:
+        - id
+        - user_id
+        - action_type
+        - target_id
+        - changes
+        - reason
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        user_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Eylemi yapan; sistem eyleminde null.
+        action_type:
+          $ref: '#/components/schemas/AuditLogAction'
+        target_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Etkilenen varlık (kanal, rol, üye, davet kodu ...).
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogChange'
+        reason:
+          anyOf:
+            - type: string
+            - type: 'null'
+        options:
+          type: object
+          additionalProperties:
+            type: string
+          description: Eyleme göre ek bilgi (ör. MESSAGE_DELETE → channel_id, count; MEMBER_MOVE → channel_id).
+    AuditLogPage:
+      type: object
+      required:
+        - audit_log_entries
+        - users
+      properties:
+        audit_log_entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+          description: Yeniden eskiye.
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          description: Kayıtlarda geçen kullanıcılar (yapan + hedef).
+    AuthSession:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - user
+      properties:
+        access_token:
+          type: string
+          description: Opak değil, imzalı kısa ömürlü token; istemci içini okumaz.
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in:
+          type: integer
+          format: int32
+          description: Saniye (varsayılan 900).
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+      description: |-
+        Oturum yanıtı. Refresh token gövdede DEĞİL, `Set-Cookie` başlığındadır:
+        `chatapp_rt=<token>; HttpOnly; Secure; SameSite=Strict; Path=/v1/auth` (geliştirmede `Secure` yok).
+    Ban:
+      type: object
+      required:
+        - user
+        - reason
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        reason:
+          anyOf:
+            - type: string
+            - type: 'null'
+    BetaCodeCheck:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          $ref: '#/components/schemas/BetaCodeState'
+    BetaCodeCheckRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+    BetaCodeState:
+      type: string
+      enum:
+        - valid
+        - invalid
+        - expired
+        - exhausted
+    Channel:
+      type: object
+      required:
+        - id
+        - guild_id
+        - type
+        - name
+        - topic
+        - position
+        - parent_id
+        - permission_overwrites
+        - bitrate
+        - user_limit
+        - last_message_id
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        type:
+          $ref: '#/components/schemas/ChannelType'
+        name:
+          type: string
+          description: Metin kanalında küçük harf-tire biçimine normalleştirilir; 1–100.
+        topic:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Yalnız metin kanalı (≤1024).
+        position:
+          type: integer
+          format: int32
+          description: Aynı ebeveyn altındaki sıra (küçük önce).
+        parent_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Kategori kimliği; kategori ve kökteki kanallarda null.
+        permission_overwrites:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionOverwrite'
+        bitrate:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+          description: 'Yalnız ses: bit/sn (8000–384000).'
+        user_limit:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+          description: 'Yalnız ses: 0 = sınırsız, 1–99.'
+        last_message_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Son mesajın kimliği (okunmamış hesabı için). Metin ve ses (oda sohbeti) kanallarında.
+    ChannelCreateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - CHANNEL_CREATE
+        d:
+          $ref: '#/components/schemas/Channel'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    ChannelDeleteDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - CHANNEL_DELETE
+        d:
+          $ref: '#/components/schemas/Channel'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    ChannelPosition:
+      type: object
+      required:
+        - id
+        - position
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        position:
+          type: integer
+          format: int32
+        parent_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Verilirse kanal bu kategoriye taşınır (null = köke).
+        lock_permissions:
+          type: boolean
+          description: Taşınırken yeni kategorinin izinlerini al.
+    ChannelType:
+      type: integer
+      enum:
+        - 0
+        - 2
+        - 4
+      description: Discord sayısal kanal türleri (K25). Beta 0'da yalnız bu üçü.
+      x-enum-varnames:
+        - GUILD_TEXT
+        - GUILD_VOICE
+        - GUILD_CATEGORY
+    ChannelUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - CHANNEL_UPDATE
+        d:
+          $ref: '#/components/schemas/Channel'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    CheckStatus:
+      type: string
+      enum:
+        - ok
+        - fail
+    ClientPresenceStatus:
+      type: string
+      enum:
+        - online
+        - idle
+        - dnd
+        - invisible
+      description: İstemcinin gönderebildiği durum (`invisible` başkalarına `offline` görünür).
+    ClientStatus:
+      type: object
+      properties:
+        web:
+          $ref: '#/components/schemas/PresenceStatus'
+        desktop:
+          $ref: '#/components/schemas/PresenceStatus'
+        mobile:
+          $ref: '#/components/schemas/PresenceStatus'
+    CompleteUploadRequest:
+      type: object
+      properties:
+        width:
+          type: integer
+          format: int32
+          description: Görselse istemcinin ölçtüğü boyut (küçük resim/yer tutucu için).
+        height:
+          type: integer
+          format: int32
+    Consents:
+      type: object
+      required:
+        - adult
+        - terms
+        - privacy
+      properties:
+        adult:
+          type: boolean
+          description: '"18 yaşından büyüğüm" (K31). `true` olmalı.'
+        terms:
+          type: boolean
+          description: Kullanım koşulları. `true` olmalı.
+        privacy:
+          type: boolean
+          description: KVKK aydınlatma metni. `true` olmalı.
+    CreateBanRequest:
+      type: object
+      properties:
+        delete_message_seconds:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 604800
+          description: 'Son N saniyedeki mesajlarını sil (9.1): 0, 3600, 86400, 604800 (en çok 604800).'
+          default: 0
+    CreateChannelRequest:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          $ref: '#/components/schemas/ChannelType'
+        topic:
+          type: string
+          maxLength: 1024
+        parent_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: Kategori (kategori içinde kategori yok → 422).
+        position:
+          type: integer
+          format: int32
+          description: Verilmezse ebeveyninin sonuna eklenir.
+        bitrate:
+          type: integer
+          format: int32
+          minimum: 8000
+          maximum: 384000
+        user_limit:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 99
+        permission_overwrites:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverwriteInput'
+          description: Verilmez ve `parent_id` varsa kategoriden kopyalanır (eşitlenmiş).
+    CreateGuildRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        icon_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: '`purpose=guild_icon` ile yüklenmiş dosya.'
+        template:
+          $ref: '#/components/schemas/GuildTemplate'
+          default: empty
+    CreateInviteRequest:
+      type: object
+      properties:
+        max_age:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 604800
+          default: 604800
+        max_uses:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+          default: 0
+      description: '4.6 seçenekleri: süre 1800/3600/86400/604800/0 (süresiz); kullanım 0 (sınırsız)/1/5/10/25/100.'
+    CreateMessageRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          maxLength: 4000
+          description: ≤4000. `content` ya da `attachment_ids`'ten en az biri dolu olmalı.
+        nonce:
+          type: string
+          maxLength: 25
+          description: İstemci üretir (≤25 karakter); iyimser gösterimi eşlemek için MESSAGE_CREATE'de geri gelir. Aynı nonce 2 dk içinde tekrar gelirse aynı mesaj döner (idempotent).
+        message_reference:
+          $ref: '#/components/schemas/MessageReference'
+          description: Yanıt (5.2). Aynı kanaldaki mesaj olmalı.
+        attachment_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+          maxItems: 10
+          description: '`POST /v1/attachments` + complete ile hazırlanmış, bu kanala ait ekler (≤10). ATTACH_FILES.'
+        allowed_mentions:
+          $ref: '#/components/schemas/AllowedMentions'
+    CreateRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          default: yeni rol
+        permissions:
+          $ref: '#/components/schemas/PermissionBits'
+        color:
+          type: integer
+          format: int32
+          default: 0
+        hoist:
+          type: boolean
+          default: false
+        mentionable:
+          type: boolean
+          default: false
+    CreateUploadRequest:
+      type: object
+      required:
+        - filename
+        - content_type
+        - size
+        - purpose
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Bayt; sınır aşılırsa 413 FILE_TOO_LARGE.
+        purpose:
+          $ref: '#/components/schemas/AttachmentPurpose'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+    CurrentUser:
+      type: object
+      required:
+        - id
+        - username
+        - display_name
+        - avatar_id
+        - banner_id
+        - about
+        - bot
+        - email
+        - email_verified
+        - date_of_birth
+        - locale
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        username:
+          type: string
+          description: 'Benzersiz, küçük harf: `^[a-z0-9_.]{2,32}$`.'
+        display_name:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Görünen ad (1–32); yoksa istemci `username` gösterir.
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        banner_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        about:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Hakkında (≤190).
+        bot:
+          type: boolean
+        email:
+          type: string
+        email_verified:
+          type: boolean
+          description: E-posta doğrulandı mı (EKRANLAR 1.4). Doğrulanmamış hesap kilitlenmez; istemci uyarı bandı gösterir.
+        date_of_birth:
+          type: string
+          format: date
+        locale:
+          type: string
+      description: Oturum sahibinin kendisi (`GET /v1/users/@me`, READY).
+    DefaultMessageNotifications:
+      type: integer
+      enum:
+        - 0
+        - 1
+      x-enum-varnames:
+        - ALL_MESSAGES
+        - ONLY_MENTIONS
+    DownloadUrl:
+      type: object
+      required:
+        - url
+        - expires_at
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    Emoji:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        name:
+          type: string
+      description: Beta 0'da yalnız Unicode emoji (`id = null`, `name` = emoji karakteri).
+    ErrorCode:
+      type: string
+      enum:
+        - BAD_REQUEST
+        - VALIDATION_FAILED
+        - UNAUTHORIZED
+        - TOKEN_EXPIRED
+        - INVALID_CREDENTIALS
+        - ACCOUNT_SUSPENDED
+        - FORBIDDEN
+        - MISSING_PERMISSIONS
+        - NOT_FOUND
+        - UNKNOWN_USER
+        - UNKNOWN_GUILD
+        - UNKNOWN_CHANNEL
+        - UNKNOWN_ROLE
+        - UNKNOWN_MEMBER
+        - UNKNOWN_MESSAGE
+        - UNKNOWN_INVITE
+        - UNKNOWN_BAN
+        - UNKNOWN_ATTACHMENT
+        - CONFLICT
+        - USERNAME_TAKEN
+        - EMAIL_TAKEN
+        - ALREADY_MEMBER
+        - BETA_CODE_INVALID
+        - BETA_CODE_EXPIRED
+        - BETA_CODE_EXHAUSTED
+        - UNDERAGE
+        - INVITE_EXPIRED
+        - BANNED_FROM_GUILD
+        - OWNER_CANNOT_LEAVE
+        - ROLE_HIERARCHY
+        - GUILD_LIMIT_REACHED
+        - FILE_TOO_LARGE
+        - UPLOAD_INCOMPLETE
+        - CHANNEL_FULL
+        - RATE_LIMITED
+        - INTERNAL
+        - NOT_IMPLEMENTED
+        - UNAVAILABLE
+      description: Makine-okunur hata kodları. İstemci yalnız bu koda göre dallanır; `message` gösterim içindir.
+    FieldError:
+      type: object
+      required:
+        - field
+        - code
+        - message
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+          description: 'Alan düzeyi kod: REQUIRED, TOO_SHORT, TOO_LONG, INVALID_FORMAT, OUT_OF_RANGE, TAKEN, WEAK, LINK_INVALID, LINK_EXPIRED, LINK_USED ...'
+        message:
+          type: string
+      description: Alan doğrulama hatası (422). `field` JSON yolu, ör. `password` ya da `permission_overwrites.0.allow`.
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          maxLength: 254
+    GatewayClientFrame:
+      oneOf:
+        - $ref: '#/components/schemas/GatewayHeartbeatFrame'
+        - $ref: '#/components/schemas/GatewayIdentifyFrame'
+        - $ref: '#/components/schemas/GatewayResumeFrame'
+        - $ref: '#/components/schemas/GatewayPresenceUpdateFrame'
+      description: İstemcinin gönderebildiği çerçeveler.
+    GatewayCloseCode:
+      type: integer
+      enum:
+        - 4000
+        - 4001
+        - 4002
+        - 4003
+        - 4004
+        - 4005
+        - 4007
+        - 4008
+        - 4009
+        - 4012
+      description: Kapanış kodları (Discord v10 ile aynı anlam). 4004 ve 4010+ dışındakilerde istemci RESUME dener.
+      x-enum-varnames:
+        - UNKNOWN_ERROR
+        - UNKNOWN_OPCODE
+        - DECODE_ERROR
+        - NOT_AUTHENTICATED
+        - AUTHENTICATION_FAILED
+        - ALREADY_AUTHENTICATED
+        - INVALID_SEQ
+        - RATE_LIMITED
+        - SESSION_TIMED_OUT
+        - INVALID_API_VERSION
+    GatewayDispatchFrame:
+      oneOf:
+        - $ref: '#/components/schemas/ReadyDispatch'
+        - $ref: '#/components/schemas/ResumedDispatch'
+        - $ref: '#/components/schemas/GuildCreateDispatch'
+        - $ref: '#/components/schemas/GuildUpdateDispatch'
+        - $ref: '#/components/schemas/GuildDeleteDispatch'
+        - $ref: '#/components/schemas/ChannelCreateDispatch'
+        - $ref: '#/components/schemas/ChannelUpdateDispatch'
+        - $ref: '#/components/schemas/ChannelDeleteDispatch'
+        - $ref: '#/components/schemas/GuildRoleCreateDispatch'
+        - $ref: '#/components/schemas/GuildRoleUpdateDispatch'
+        - $ref: '#/components/schemas/GuildRoleDeleteDispatch'
+        - $ref: '#/components/schemas/GuildMemberAddDispatch'
+        - $ref: '#/components/schemas/GuildMemberUpdateDispatch'
+        - $ref: '#/components/schemas/GuildMemberRemoveDispatch'
+        - $ref: '#/components/schemas/GuildBanAddDispatch'
+        - $ref: '#/components/schemas/GuildBanRemoveDispatch'
+        - $ref: '#/components/schemas/MessageCreateDispatch'
+        - $ref: '#/components/schemas/MessageUpdateDispatch'
+        - $ref: '#/components/schemas/MessageDeleteDispatch'
+        - $ref: '#/components/schemas/MessageReactionAddDispatch'
+        - $ref: '#/components/schemas/MessageReactionRemoveDispatch'
+        - $ref: '#/components/schemas/MessageAckDispatch'
+        - $ref: '#/components/schemas/TypingStartDispatch'
+        - $ref: '#/components/schemas/PresenceUpdateDispatch'
+        - $ref: '#/components/schemas/VoiceStateUpdateDispatch'
+        - $ref: '#/components/schemas/UserUpdateDispatch'
+        - $ref: '#/components/schemas/UserSettingsUpdateDispatch'
+      description: Tüm dispatch çerçeveleri (`t` ile ayrışır).
+    GatewayEventName:
+      type: string
+      enum:
+        - READY
+        - RESUMED
+        - GUILD_CREATE
+        - GUILD_UPDATE
+        - GUILD_DELETE
+        - CHANNEL_CREATE
+        - CHANNEL_UPDATE
+        - CHANNEL_DELETE
+        - GUILD_ROLE_CREATE
+        - GUILD_ROLE_UPDATE
+        - GUILD_ROLE_DELETE
+        - GUILD_MEMBER_ADD
+        - GUILD_MEMBER_UPDATE
+        - GUILD_MEMBER_REMOVE
+        - GUILD_BAN_ADD
+        - GUILD_BAN_REMOVE
+        - MESSAGE_CREATE
+        - MESSAGE_UPDATE
+        - MESSAGE_DELETE
+        - MESSAGE_REACTION_ADD
+        - MESSAGE_REACTION_REMOVE
+        - MESSAGE_ACK
+        - TYPING_START
+        - PRESENCE_UPDATE
+        - VOICE_STATE_UPDATE
+        - USER_UPDATE
+        - USER_SETTINGS_UPDATE
+      description: Dispatch olay adları.
+    GatewayGuild:
+      type: object
+      required:
+        - id
+        - name
+        - icon_id
+        - owner_id
+        - system_channel_id
+        - default_message_notifications
+        - joined_at
+        - member_count
+        - channels
+        - roles
+        - members
+        - presences
+        - voice_states
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        name:
+          type: string
+        icon_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        owner_id:
+          $ref: '#/components/schemas/Snowflake'
+        system_channel_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: '"X katıldı" sistem mesajlarının düştüğü kanal.'
+        default_message_notifications:
+          $ref: '#/components/schemas/DefaultMessageNotifications'
+        approximate_member_count:
+          type: integer
+          format: int32
+          description: Yalnız `with_counts=true` ya da gateway yüklerinde dolu.
+        approximate_presence_count:
+          type: integer
+          format: int32
+        joined_at:
+          type: string
+          format: date-time
+          description: Oturum sahibinin katılma zamanı.
+        member_count:
+          type: integer
+          format: int32
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/Channel'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuildMember'
+          description: 'Beta 0: ≤1000 üyeli sunucuda tam liste (≤200 eşzamanlı hedefi). Büyük sunucu için ileride op 8.'
+        presences:
+          type: array
+          items:
+            $ref: '#/components/schemas/Presence'
+          description: Çevrimiçi/boşta/rahatsız etme olan üyeler (offline olanlar listede yok).
+        voice_states:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoiceState'
+      description: Gateway'de ve sunucu oluşturma yanıtında gelen tam sunucu görüntüsü.
+    GatewayHeartbeatAckFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 11
+        d:
+          type: 'null'
+    GatewayHeartbeatFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 1
+        d:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+      description: 'İki yönlü: istemci gönderir (d = son s ya da null); sunucu da isteyebilir (d = null), istemci hemen yanıtlar.'
+    GatewayHello:
+      type: object
+      required:
+        - heartbeat_interval
+      properties:
+        heartbeat_interval:
+          type: integer
+          format: int32
+          description: ms (varsayılan 41250). İlk heartbeat `heartbeat_interval * jitter(0..1)` sonra.
+    GatewayHelloFrame:
+      type: object
+      required:
+        - op
+        - d
+        - s
+        - t
+      properties:
+        op:
+          type: integer
+          enum:
+            - 10
+        d:
+          $ref: '#/components/schemas/GatewayHello'
+        s:
+          type: 'null'
+        t:
+          type: 'null'
+    GatewayIdentify:
+      type: object
+      required:
+        - token
+        - properties
+      properties:
+        token:
+          type: string
+          description: REST'teki access token (Bearer öneki olmadan). Geçersiz → kapanış 4004.
+        properties:
+          $ref: '#/components/schemas/GatewayIdentifyProperties'
+        presence:
+          $ref: '#/components/schemas/GatewayPresenceUpdate'
+          description: Başlangıç durumu; yoksa `online`.
+        intents:
+          type: integer
+          format: int32
+          description: Kullanıcı istemcilerinde yok sayılır (tüm olaylar); bot platformu için ayrılmış.
+    GatewayIdentifyFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 2
+        d:
+          $ref: '#/components/schemas/GatewayIdentify'
+    GatewayIdentifyProperties:
+      type: object
+      required:
+        - os
+        - browser
+        - device
+      properties:
+        os:
+          type: string
+        browser:
+          type: string
+        device:
+          type: string
+    GatewayInfo:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: ör. `ws://localhost:8411/v1/gateway`. Bağlantıya `?v=1&encoding=json` eklenir.
+    GatewayInvalidSessionFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 9
+        d:
+          type: boolean
+      description: '`d = true` → RESUME denenebilir; `false` → 1–5 sn bekle, yeni IDENTIFY.'
+    GatewayOpcode:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 6
+        - 7
+        - 9
+        - 10
+        - 11
+      description: Discord v10 op kodları (Beta 0 alt kümesi; op 4/8/14 ileride).
+      x-enum-varnames:
+        - DISPATCH
+        - HEARTBEAT
+        - IDENTIFY
+        - PRESENCE_UPDATE
+        - RESUME
+        - RECONNECT
+        - INVALID_SESSION
+        - HELLO
+        - HEARTBEAT_ACK
+    GatewayPresenceUpdate:
+      type: object
+      required:
+        - status
+        - since
+        - afk
+      properties:
+        status:
+          $ref: '#/components/schemas/ClientPresenceStatus'
+        since:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: 'null'
+          description: Boşta başlangıcı (unix ms) ya da null.
+        afk:
+          type: boolean
+    GatewayPresenceUpdateFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 3
+        d:
+          $ref: '#/components/schemas/GatewayPresenceUpdate'
+    GatewayReconnectFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 7
+        d:
+          type: 'null'
+      description: "Sunucu yeniden başlıyor: istemci kapatıp `resume_gateway_url`'e RESUME ile bağlanır."
+    GatewayResume:
+      type: object
+      required:
+        - token
+        - session_id
+        - seq
+      properties:
+        token:
+          type: string
+        session_id:
+          type: string
+        seq:
+          type: integer
+          format: int32
+          description: Son alınan `s`.
+    GatewayResumeFrame:
+      type: object
+      required:
+        - op
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 6
+        d:
+          $ref: '#/components/schemas/GatewayResume'
+    GatewayServerFrame:
+      oneOf:
+        - $ref: '#/components/schemas/GatewayHelloFrame'
+        - $ref: '#/components/schemas/GatewayHeartbeatFrame'
+        - $ref: '#/components/schemas/GatewayHeartbeatAckFrame'
+        - $ref: '#/components/schemas/GatewayReconnectFrame'
+        - $ref: '#/components/schemas/GatewayInvalidSessionFrame'
+        - $ref: '#/components/schemas/GatewayDispatchFrame'
+      description: Sunucunun gönderdiği her çerçeve (`op` ile ayrışır; op 0'da `t` ile).
+    Guild:
+      type: object
+      required:
+        - id
+        - name
+        - icon_id
+        - owner_id
+        - system_channel_id
+        - default_message_notifications
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        name:
+          type: string
+        icon_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        owner_id:
+          $ref: '#/components/schemas/Snowflake'
+        system_channel_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: '"X katıldı" sistem mesajlarının düştüğü kanal.'
+        default_message_notifications:
+          $ref: '#/components/schemas/DefaultMessageNotifications'
+        approximate_member_count:
+          type: integer
+          format: int32
+          description: Yalnız `with_counts=true` ya da gateway yüklerinde dolu.
+        approximate_presence_count:
+          type: integer
+          format: int32
+    GuildBanAddDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_BAN_ADD
+        d:
+          $ref: '#/components/schemas/GuildBanEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildBanEvent:
+      type: object
+      required:
+        - guild_id
+        - user
+      properties:
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        user:
+          $ref: '#/components/schemas/User'
+    GuildBanRemoveDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_BAN_REMOVE
+        d:
+          $ref: '#/components/schemas/GuildBanEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildCreateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_CREATE
+        d:
+          $ref: '#/components/schemas/GatewayGuild'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildDeleteDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_DELETE
+        d:
+          $ref: '#/components/schemas/GuildDeleteEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildDeleteEvent:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        unavailable:
+          type: boolean
+          description: '`false`/yok → kullanıcı sunucudan çıktı/atıldı ya da sunucu silindi (12.3).'
+    GuildMember:
+      type: object
+      required:
+        - user
+        - nick
+        - avatar_id
+        - roles
+        - joined_at
+        - deaf
+        - mute
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        nick:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Sunucuya özel takma ad (≤32).
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Sunucuya özel avatar.
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+        joined_at:
+          type: string
+          format: date-time
+        deaf:
+          type: boolean
+          description: Sunucu tarafından sağırlaştırıldı.
+        mute:
+          type: boolean
+          description: Sunucu tarafından susturuldu.
+    GuildMemberAddDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_MEMBER_ADD
+        d:
+          $ref: '#/components/schemas/GuildMemberEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildMemberEvent:
+      type: object
+      required:
+        - user
+        - nick
+        - avatar_id
+        - roles
+        - joined_at
+        - deaf
+        - mute
+        - guild_id
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        nick:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Sunucuya özel takma ad (≤32).
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Sunucuya özel avatar.
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+        joined_at:
+          type: string
+          format: date-time
+        deaf:
+          type: boolean
+          description: Sunucu tarafından sağırlaştırıldı.
+        mute:
+          type: boolean
+          description: Sunucu tarafından susturuldu.
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+    GuildMemberRemoveDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_MEMBER_REMOVE
+        d:
+          $ref: '#/components/schemas/GuildMemberRemoveEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildMemberRemoveEvent:
+      type: object
+      required:
+        - guild_id
+        - user
+      properties:
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        user:
+          $ref: '#/components/schemas/User'
+    GuildMemberUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_MEMBER_UPDATE
+        d:
+          $ref: '#/components/schemas/GuildMemberEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildRoleCreateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_ROLE_CREATE
+        d:
+          $ref: '#/components/schemas/GuildRoleEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildRoleDeleteDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_ROLE_DELETE
+        d:
+          $ref: '#/components/schemas/GuildRoleDeleteEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildRoleDeleteEvent:
+      type: object
+      required:
+        - guild_id
+        - role_id
+      properties:
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        role_id:
+          $ref: '#/components/schemas/Snowflake'
+    GuildRoleEvent:
+      type: object
+      required:
+        - guild_id
+        - role
+      properties:
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        role:
+          $ref: '#/components/schemas/Role'
+    GuildRoleUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_ROLE_UPDATE
+        d:
+          $ref: '#/components/schemas/GuildRoleEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    GuildTemplate:
+      type: string
+      enum:
+        - empty
+        - friends
+        - community
+      description: 'Sunucu şablonu (4.4): boş = #genel + Genel ses; arkadaş = genel, oyun, 2 ses; topluluk = kurallar, duyurular, genel + örnek roller.'
+    GuildUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - GUILD_UPDATE
+        d:
+          $ref: '#/components/schemas/Guild'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - role
+        - version
+      properties:
+        status:
+          $ref: '#/components/schemas/CheckStatus'
+        role:
+          type: string
+          description: '`api` ya da `gateway`.'
+        version:
+          type: string
+    Invite:
+      type: object
+      required:
+        - code
+        - guild
+        - channel
+        - inviter
+        - expires_at
+        - approximate_member_count
+        - approximate_presence_count
+      properties:
+        code:
+          type: string
+          description: 8 karakter, [A-Za-z0-9].
+        guild:
+          $ref: '#/components/schemas/InviteGuild'
+        channel:
+          $ref: '#/components/schemas/InviteChannel'
+        inviter:
+          anyOf:
+            - $ref: '#/components/schemas/User'
+            - type: 'null'
+        expires_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          description: Süresiz davette null.
+        approximate_member_count:
+          type: integer
+          format: int32
+        approximate_presence_count:
+          type: integer
+          format: int32
+      description: Davet önizlemesi (EKRANLAR 4.5) — giriş yapmadan da okunabilir.
+    InviteAcceptResult:
+      type: object
+      required:
+        - guild
+        - already_member
+      properties:
+        guild:
+          $ref: '#/components/schemas/GatewayGuild'
+        already_member:
+          type: boolean
+          description: Zaten üyeydi → "Sunucuya git" (4.5).
+    InviteChannel:
+      type: object
+      required:
+        - id
+        - name
+        - type
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/ChannelType'
+    InviteGuild:
+      type: object
+      required:
+        - id
+        - name
+        - icon_id
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        name:
+          type: string
+        icon_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+    InviteWithMetadata:
+      type: object
+      required:
+        - code
+        - guild
+        - channel
+        - inviter
+        - expires_at
+        - approximate_member_count
+        - approximate_presence_count
+        - uses
+        - max_uses
+        - max_age
+        - created_at
+      properties:
+        code:
+          type: string
+          description: 8 karakter, [A-Za-z0-9].
+        guild:
+          $ref: '#/components/schemas/InviteGuild'
+        channel:
+          $ref: '#/components/schemas/InviteChannel'
+        inviter:
+          anyOf:
+            - $ref: '#/components/schemas/User'
+            - type: 'null'
+        expires_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          description: Süresiz davette null.
+        approximate_member_count:
+          type: integer
+          format: int32
+        approximate_presence_count:
+          type: integer
+          format: int32
+        uses:
+          type: integer
+          format: int32
+        max_uses:
+          type: integer
+          format: int32
+          description: 0 = sınırsız.
+        max_age:
+          type: integer
+          format: int32
+          description: Saniye; 0 = süresiz.
+        created_at:
+          type: string
+          format: date-time
+      description: 'Yönetim görünümü (8.5): önizleme + kullanım bilgisi.'
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    Message:
+      type: object
+      required:
+        - id
+        - channel_id
+        - author
+        - content
+        - timestamp
+        - edited_timestamp
+        - type
+        - mention_everyone
+        - mentions
+        - mention_roles
+        - attachments
+        - reactions
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: Gateway yüklerinde dolu.
+        author:
+          $ref: '#/components/schemas/User'
+        content:
+          type: string
+          description: ≤4000 karakter. Ekli mesajda boş olabilir.
+        timestamp:
+          type: string
+          format: date-time
+          description: Snowflake'ten türetilir (ayrı sütun yok).
+        edited_timestamp:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        type:
+          $ref: '#/components/schemas/MessageType'
+        mention_everyone:
+          type: boolean
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        mention_roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reaction'
+        message_reference:
+          $ref: '#/components/schemas/MessageReference'
+          description: Yanıt ise dolu.
+        referenced_message:
+          anyOf:
+            - $ref: '#/components/schemas/Message'
+            - type: 'null'
+          description: Yanıtlanan mesaj; `null` → "Orijinal mesaj silindi". Yanıt değilse alan yok.
+        nonce:
+          type: string
+          description: İstemcinin gönderdiği nonce yalnız oluşturma yanıtında ve MESSAGE_CREATE'de geri döner.
+    MessageAckDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_ACK
+        d:
+          $ref: '#/components/schemas/MessageAckEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    MessageAckEvent:
+      type: object
+      required:
+        - channel_id
+        - message_id
+        - mention_count
+      properties:
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        message_id:
+          $ref: '#/components/schemas/Snowflake'
+        mention_count:
+          type: integer
+          format: int32
+      description: Yalnız ilgili kullanıcının oturumlarına (çoklu sekme/cihaz okundu eşitlemesi).
+    MessageCreateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_CREATE
+        d:
+          $ref: '#/components/schemas/MessageCreateEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    MessageCreateEvent:
+      type: object
+      required:
+        - id
+        - channel_id
+        - author
+        - content
+        - timestamp
+        - edited_timestamp
+        - type
+        - mention_everyone
+        - mentions
+        - mention_roles
+        - attachments
+        - reactions
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: Gateway yüklerinde dolu.
+        author:
+          $ref: '#/components/schemas/User'
+        content:
+          type: string
+          description: ≤4000 karakter. Ekli mesajda boş olabilir.
+        timestamp:
+          type: string
+          format: date-time
+          description: Snowflake'ten türetilir (ayrı sütun yok).
+        edited_timestamp:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        type:
+          $ref: '#/components/schemas/MessageType'
+        mention_everyone:
+          type: boolean
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        mention_roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reaction'
+        message_reference:
+          $ref: '#/components/schemas/MessageReference'
+          description: Yanıt ise dolu.
+        referenced_message:
+          anyOf:
+            - $ref: '#/components/schemas/Message'
+            - type: 'null'
+          description: Yanıtlanan mesaj; `null` → "Orijinal mesaj silindi". Yanıt değilse alan yok.
+        nonce:
+          type: string
+          description: İstemcinin gönderdiği nonce yalnız oluşturma yanıtında ve MESSAGE_CREATE'de geri döner.
+        member:
+          $ref: '#/components/schemas/PartialMember'
+    MessageDeleteDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_DELETE
+        d:
+          $ref: '#/components/schemas/MessageDeleteEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    MessageDeleteEvent:
+      type: object
+      required:
+        - id
+        - channel_id
+        - guild_id
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+    MessageDensity:
+      type: string
+      enum:
+        - cozy
+        - compact
+    MessageReactionAddDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_REACTION_ADD
+        d:
+          $ref: '#/components/schemas/MessageReactionEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    MessageReactionEvent:
+      type: object
+      required:
+        - user_id
+        - channel_id
+        - message_id
+        - guild_id
+        - emoji
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        message_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        emoji:
+          $ref: '#/components/schemas/Emoji'
+        member:
+          $ref: '#/components/schemas/PartialMember'
+          description: Yalnız ADD'de.
+    MessageReactionRemoveDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_REACTION_REMOVE
+        d:
+          $ref: '#/components/schemas/MessageReactionEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    MessageReference:
+      type: object
+      required:
+        - message_id
+      properties:
+        message_id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+    MessageType:
+      type: integer
+      enum:
+        - 0
+        - 7
+        - 19
+      description: Discord sayısal mesaj türleri; Beta 0 alt kümesi.
+      x-enum-varnames:
+        - DEFAULT
+        - GUILD_MEMBER_JOIN
+        - REPLY
+    MessageUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - MESSAGE_UPDATE
+        d:
+          $ref: '#/components/schemas/MessageCreateEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    OverwriteInput:
+      type: object
+      required:
+        - id
+        - type
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        type:
+          $ref: '#/components/schemas/OverwriteType'
+        allow:
+          $ref: '#/components/schemas/PermissionBits'
+          default: '0'
+        deny:
+          $ref: '#/components/schemas/PermissionBits'
+          default: '0'
+    OverwriteType:
+      type: integer
+      enum:
+        - 0
+        - 1
+      x-enum-varnames:
+        - ROLE
+        - MEMBER
+    PartialMember:
+      type: object
+      required:
+        - nick
+        - avatar_id
+        - roles
+        - joined_at
+      properties:
+        nick:
+          anyOf:
+            - type: string
+            - type: 'null'
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+        joined_at:
+          type: string
+          format: date-time
+      description: Mesajı gönderenin üye bilgisi (rol rengi, takma ad) — `user` alanı yok, `author`'dadır.
+    PermissionBit:
+      type: integer
+      enum:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+        - 19
+        - 20
+        - 21
+        - 22
+        - 23
+        - 24
+        - 25
+        - 26
+        - 27
+        - 28
+        - 29
+        - 30
+        - 31
+        - 32
+        - 33
+        - 34
+        - 35
+        - 36
+        - 37
+        - 38
+        - 39
+        - 40
+        - 41
+        - 42
+        - 43
+        - 44
+        - 45
+        - 46
+        - 49
+        - 50
+        - 51
+        - 52
+      description: |-
+        Discord v10 izin bitleri: değer = **bit sırası** (izin değeri `1 << n`).
+        Tek kaynak burası; Go `internal/perm` sabitleri testte buna karşı denetlenir,
+        TS `@chatapp/api-types` `PERMISSIONS` (bigint) buradan üretilir.
+      x-enum-varnames:
+        - CREATE_INSTANT_INVITE
+        - KICK_MEMBERS
+        - BAN_MEMBERS
+        - ADMINISTRATOR
+        - MANAGE_CHANNELS
+        - MANAGE_GUILD
+        - ADD_REACTIONS
+        - VIEW_AUDIT_LOG
+        - PRIORITY_SPEAKER
+        - STREAM
+        - VIEW_CHANNEL
+        - SEND_MESSAGES
+        - SEND_TTS_MESSAGES
+        - MANAGE_MESSAGES
+        - EMBED_LINKS
+        - ATTACH_FILES
+        - READ_MESSAGE_HISTORY
+        - MENTION_EVERYONE
+        - USE_EXTERNAL_EMOJIS
+        - VIEW_GUILD_INSIGHTS
+        - CONNECT
+        - SPEAK
+        - MUTE_MEMBERS
+        - DEAFEN_MEMBERS
+        - MOVE_MEMBERS
+        - USE_VAD
+        - CHANGE_NICKNAME
+        - MANAGE_NICKNAMES
+        - MANAGE_ROLES
+        - MANAGE_WEBHOOKS
+        - MANAGE_GUILD_EXPRESSIONS
+        - USE_APPLICATION_COMMANDS
+        - REQUEST_TO_SPEAK
+        - MANAGE_EVENTS
+        - MANAGE_THREADS
+        - CREATE_PUBLIC_THREADS
+        - CREATE_PRIVATE_THREADS
+        - USE_EXTERNAL_STICKERS
+        - SEND_MESSAGES_IN_THREADS
+        - USE_EMBEDDED_ACTIVITIES
+        - MODERATE_MEMBERS
+        - VIEW_CREATOR_MONETIZATION_ANALYTICS
+        - USE_SOUNDBOARD
+        - CREATE_GUILD_EXPRESSIONS
+        - CREATE_EVENTS
+        - USE_EXTERNAL_SOUNDS
+        - SEND_VOICE_MESSAGES
+        - SEND_POLLS
+        - USE_EXTERNAL_APPS
+        - PIN_MESSAGES
+        - BYPASS_SLOWMODE
+    PermissionBits:
+      type: string
+      pattern: ^[0-9]{1,20}$
+      description: 'İzin bit dizisi: Discord v10 bitleri, 64-bit tamsayının ondalık string gösterimi.'
+      examples:
+        - '1024'
+    PermissionOverwrite:
+      type: object
+      required:
+        - id
+        - type
+        - allow
+        - deny
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        type:
+          $ref: '#/components/schemas/OverwriteType'
+        allow:
+          $ref: '#/components/schemas/PermissionBits'
+        deny:
+          $ref: '#/components/schemas/PermissionBits'
+      description: İzin geçersiz kılma. `id` = rol kimliği (`type=0`;
+    Presence:
+      type: object
+      required:
+        - user_id
+        - status
+        - client_status
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Snowflake'
+        status:
+          $ref: '#/components/schemas/PresenceStatus'
+        client_status:
+          $ref: '#/components/schemas/ClientStatus'
+    PresenceStatus:
+      type: string
+      enum:
+        - online
+        - idle
+        - dnd
+        - offline
+    PresenceUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - PRESENCE_UPDATE
+        d:
+          $ref: '#/components/schemas/PresenceUpdateEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    PresenceUpdateEvent:
+      type: object
+      required:
+        - user
+        - guild_id
+        - status
+        - client_status
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              $ref: '#/components/schemas/Snowflake'
+          required:
+            - id
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        status:
+          $ref: '#/components/schemas/PresenceStatus'
+        client_status:
+          $ref: '#/components/schemas/ClientStatus'
+    PutOverwriteRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/OverwriteType'
+        allow:
+          $ref: '#/components/schemas/PermissionBits'
+          default: '0'
+        deny:
+          $ref: '#/components/schemas/PermissionBits'
+          default: '0'
+    Reaction:
+      type: object
+      required:
+        - emoji
+        - count
+        - me
+      properties:
+        emoji:
+          $ref: '#/components/schemas/Emoji'
+        count:
+          type: integer
+          format: int32
+        me:
+          type: boolean
+          description: Oturum sahibi de tepki verdi.
+    ReadState:
+      type: object
+      required:
+        - channel_id
+        - last_read_message_id
+        - mention_count
+      properties:
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        last_read_message_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        mention_count:
+          type: integer
+          format: int32
+          description: Son okumadan beri beni (ya da
+      description: Okunmamış durumu (kanal başına). Okunmamış = `channel.last_message_id > last_read_message_id`.
+    ReadyDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - READY
+        d:
+          $ref: '#/components/schemas/ReadyEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    ReadyEvent:
+      type: object
+      required:
+        - v
+        - user
+        - session_id
+        - resume_gateway_url
+        - guilds
+        - read_states
+        - user_settings
+      properties:
+        v:
+          type: integer
+          format: int32
+          description: Gateway sürümü (1).
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+        session_id:
+          type: string
+        resume_gateway_url:
+          type: string
+          description: RESUME için bağlanılacak adres.
+        guilds:
+          type: array
+          items:
+            $ref: '#/components/schemas/GatewayGuild'
+        read_states:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadState'
+        user_settings:
+          $ref: '#/components/schemas/UserSettings'
+      description: READY (G-05). Tüm sunucular tam görüntüyle gelir (Beta 0 ölçeği).
+    ReadyStatus:
+      type: object
+      required:
+        - status
+        - role
+        - checks
+      properties:
+        status:
+          $ref: '#/components/schemas/CheckStatus'
+        role:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CheckStatus'
+      description: '`/ready`: bağımlılık başına durum (postgres, nats, valkey).'
+    RegisterRequest:
+      type: object
+      required:
+        - invite_code
+        - email
+        - username
+        - password
+        - date_of_birth
+        - consents
+      properties:
+        invite_code:
+          type: string
+          description: Beta davet kodu (K38).
+        email:
+          type: string
+          maxLength: 254
+        username:
+          type: string
+          pattern: ^[a-z0-9_.]{2,32}$
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: 8–128 karakter.
+        date_of_birth:
+          type: string
+          format: date
+          description: 18 yaş altı → 422 `UNDERAGE`.
+        consents:
+          $ref: '#/components/schemas/Consents'
+        display_name:
+          type: string
+          description: İsteğe bağlı görünen ad (1–32).
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+          description: E-postadaki bağlantının `token` sorgu değeri.
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: 8–128 karakter.
+    ResumedDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - RESUMED
+        d:
+          type: object
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    RevokeOthersResult:
+      type: object
+      required:
+        - revoked
+      properties:
+        revoked:
+          type: integer
+          format: int32
+          description: Kapatılan oturum ailesi sayısı.
+    Role:
+      type: object
+      required:
+        - id
+        - name
+        - color
+        - hoist
+        - mentionable
+        - position
+        - permissions
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        name:
+          type: string
+        color:
+          type: integer
+          format: int32
+          description: 0xRRGGBB tamsayı; 0 = renksiz.
+        hoist:
+          type: boolean
+          description: Üye panelinde ayrı grup olarak göster.
+        mentionable:
+          type: boolean
+        position:
+          type: integer
+          format: int32
+          description: Büyük olan üstte.
+        permissions:
+          $ref: '#/components/schemas/PermissionBits'
+      description: Rol.
+    RolePosition:
+      type: object
+      required:
+        - id
+        - position
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        position:
+          type: integer
+          format: int32
+    Snowflake:
+      type: string
+      pattern: ^[0-9]{1,20}$
+      description: 'Snowflake kimliği: 64-bit tamsayının ondalık string gösterimi (epoch 2015-01-01).'
+      examples:
+        - '1288310542081277952'
+    Theme:
+      type: string
+      enum:
+        - dark
+        - light
+        - system
+    TransferOwnershipRequest:
+      type: object
+      required:
+        - new_owner_id
+      properties:
+        new_owner_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: Sunucu üyesi olmalı.
+    TypingStartDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - TYPING_START
+        d:
+          $ref: '#/components/schemas/TypingStartEvent'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    TypingStartEvent:
+      type: object
+      required:
+        - channel_id
+        - guild_id
+        - user_id
+        - timestamp
+      properties:
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        user_id:
+          $ref: '#/components/schemas/Snowflake'
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix saniye. İstemci 10 sn sonra göstergeyi düşürür.
+        member:
+          $ref: '#/components/schemas/PartialMember'
+    UpdateChannelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        topic:
+          anyOf:
+            - type: string
+            - type: 'null'
+          maxLength: 1024
+        parent_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        position:
+          type: integer
+          format: int32
+        bitrate:
+          type: integer
+          format: int32
+          minimum: 8000
+          maximum: 384000
+        user_limit:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 99
+        permission_overwrites:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverwriteInput'
+          description: Tüm listeyi değiştirir.
+        lock_permissions:
+          type: boolean
+          description: '`true` → izinleri ebeveyn kategoriyle eşitle (8.3 "Kategoriyle eşitle").'
+    UpdateCurrentUserRequest:
+      type: object
+      properties:
+        display_name:
+          anyOf:
+            - type: string
+            - type: 'null'
+          minLength: 1
+          maxLength: 32
+        about:
+          anyOf:
+            - type: string
+            - type: 'null'
+          maxLength: 190
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: '`purpose=avatar` ile yüklenmiş ve tamamlanmış dosya.'
+        banner_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: '`purpose=banner` ile yüklenmiş dosya.'
+      description: Alan yoksa değişmez; `null` gönderilirse temizlenir (avatar/banner/hakkında).
+    UpdateGuildRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        icon_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        system_channel_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        default_message_notifications:
+          $ref: '#/components/schemas/DefaultMessageNotifications'
+    UpdateMemberRequest:
+      type: object
+      properties:
+        nick:
+          anyOf:
+            - type: string
+            - type: 'null'
+          maxLength: 32
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snowflake'
+          description: Tüm listeyi değiştirir (
+        mute:
+          type: boolean
+        deaf:
+          type: boolean
+        channel_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+          description: Ses kanalı (taşı) ya da null (bağlantıyı kes). Üye seste değilse 422.
+      description: |-
+        Üye güncelleme. Alan → gereken izin: `nick` MANAGE_NICKNAMES · `roles` MANAGE_ROLES ·
+        `mute` MUTE_MEMBERS · `deaf` DEAFEN_MEMBERS · `channel_id` MOVE_MEMBERS (null = ses bağlantısını kes).
+        Sunucu sustur/sağırlaştır/taşı/bağlantı kes (6.5) bu uçtan yapılır (Discord ile aynı).
+    UpdateMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          maxLength: 4000
+          description: Yalnız yazar düzenler.
+    UpdateMyMemberRequest:
+      type: object
+      properties:
+        nick:
+          anyOf:
+            - type: string
+            - type: 'null'
+          maxLength: 32
+          description: CHANGE_NICKNAME.
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+    UpdateRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        permissions:
+          $ref: '#/components/schemas/PermissionBits'
+        color:
+          type: integer
+          format: int32
+        hoist:
+          type: boolean
+        mentionable:
+          type: boolean
+    UpdateUserSettingsRequest:
+      type: object
+      properties:
+        theme:
+          $ref: '#/components/schemas/Theme'
+        message_density:
+          $ref: '#/components/schemas/MessageDensity'
+        font_scale:
+          type: number
+          format: float
+          minimum: 0.8
+          maximum: 1.5
+        developer_mode:
+          type: boolean
+        locale:
+          type: string
+    UpdateVoiceStateRequest:
+      type: object
+      properties:
+        self_mute:
+          type: boolean
+        self_deaf:
+          type: boolean
+        self_video:
+          type: boolean
+        self_stream:
+          type: boolean
+      description: Kendi ses durumumu güncelle; VOICE_STATE_UPDATE yayılır (kanal listesindeki simgeler için).
+    UploadTicket:
+      type: object
+      required:
+        - attachment_id
+        - upload_url
+        - upload_method
+        - upload_headers
+        - expires_at
+      properties:
+        attachment_id:
+          $ref: '#/components/schemas/Snowflake'
+        upload_url:
+          type: string
+          format: uri
+        upload_method:
+          type: string
+          enum:
+            - PUT
+        upload_headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+      description: İstemci dosyayı `upload_url`'e `PUT` eder (gövde = ham bayt, `upload_headers` aynen eklenir), sonra `complete` çağırır.
+    User:
+      type: object
+      required:
+        - id
+        - username
+        - display_name
+        - avatar_id
+        - banner_id
+        - about
+        - bot
+      properties:
+        id:
+          $ref: '#/components/schemas/Snowflake'
+        username:
+          type: string
+          description: 'Benzersiz, küçük harf: `^[a-z0-9_.]{2,32}$`.'
+        display_name:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Görünen ad (1–32); yoksa istemci `username` gösterir.
+        avatar_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        banner_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        about:
+          anyOf:
+            - type: string
+            - type: 'null'
+          description: Hakkında (≤190).
+        bot:
+          type: boolean
+      description: Herkese görünen kullanıcı. Görseller `GET /v1/files/{file_id}` ile çekilir (kimlik doğrulamasız, 302).
+    UserSettings:
+      type: object
+      required:
+        - theme
+        - message_density
+        - font_scale
+        - developer_mode
+        - locale
+      properties:
+        theme:
+          $ref: '#/components/schemas/Theme'
+        message_density:
+          $ref: '#/components/schemas/MessageDensity'
+        font_scale:
+          type: number
+          format: float
+          description: Yazı boyutu çarpanı (0.8–1.5).
+        developer_mode:
+          type: boolean
+        locale:
+          type: string
+      description: Hesaba bağlı tercihler (EKRANLAR 7.9). Cihaza özgü ses/görüntü ayarları (7.6/7.7) istemcide yerel tutulur.
+    UserSettingsUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - USER_SETTINGS_UPDATE
+        d:
+          $ref: '#/components/schemas/UserSettings'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    UserUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - USER_UPDATE
+        d:
+          $ref: '#/components/schemas/CurrentUser'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    UsernameAvailability:
+      type: object
+      required:
+        - available
+        - suggestions
+      properties:
+        available:
+          type: boolean
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: Doluysa en çok 3 öneri.
+    VerifyEmailRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: E-postadaki bağlantının `token` sorgu değeri.
+    VoiceGrants:
+      type: object
+      required:
+        - can_subscribe
+        - can_publish_sources
+        - can_publish_data
+      properties:
+        can_subscribe:
+          type: boolean
+          description: CONNECT
+        can_publish_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoiceTrackSource'
+          description: SPEAK → microphone; STREAM → camera, screen_share, screen_share_audio. Boşsa yalnız dinleyici.
+        can_publish_data:
+          type: boolean
+          description: Konuşan halkası/yayın ayarları için veri kanalı.
+      description: Token grant'ında taşınan yetkiler (istemci UI'si için kopyası).
+    VoiceJoinRequest:
+      type: object
+      required:
+        - channel_id
+      properties:
+        channel_id:
+          $ref: '#/components/schemas/Snowflake'
+          description: GUILD_VOICE kanalı. CONNECT yoksa 403; `user_limit` doluysa 409 CHANNEL_FULL (MOVE_MEMBERS aşar).
+        self_mute:
+          type: boolean
+          default: false
+        self_deaf:
+          type: boolean
+          default: false
+    VoiceJoinResponse:
+      type: object
+      required:
+        - url
+        - token
+        - expires_at
+        - room
+        - grants
+        - voice_state
+      properties:
+        url:
+          type: string
+          description: LiveKit sinyal adresi (ws/wss).
+        token:
+          type: string
+          description: LiveKit erişim token'ı (JWT), ömür ≤60 sn — yalnız bağlanmak için; oda içinde yenilemeyi LiveKit yapar.
+        expires_at:
+          type: string
+          format: date-time
+        room:
+          type: string
+          description: 'LiveKit oda adı: `voice:{channel_id}`.'
+        grants:
+          $ref: '#/components/schemas/VoiceGrants'
+        voice_state:
+          $ref: '#/components/schemas/VoiceState'
+      description: LiveKit bağlantı bilgisi (M-03). İstemci `new Room().connect(url, token)`.
+    VoiceState:
+      type: object
+      required:
+        - guild_id
+        - channel_id
+        - user_id
+        - session_id
+        - deaf
+        - mute
+        - self_deaf
+        - self_mute
+        - self_stream
+        - self_video
+      properties:
+        guild_id:
+          $ref: '#/components/schemas/Snowflake'
+        channel_id:
+          anyOf:
+            - $ref: '#/components/schemas/Snowflake'
+            - type: 'null'
+        user_id:
+          $ref: '#/components/schemas/Snowflake'
+        member:
+          $ref: '#/components/schemas/GuildMember'
+          description: Gateway yüklerinde dolu.
+        session_id:
+          type: string
+        deaf:
+          type: boolean
+        mute:
+          type: boolean
+        self_deaf:
+          type: boolean
+        self_mute:
+          type: boolean
+        self_stream:
+          type: boolean
+          description: Ekran paylaşıyor (bir ya da daha çok yayın).
+        self_video:
+          type: boolean
+      description: Ses durumu. `channel_id = null` → kullanıcı ses kanalından ayrıldı.
+    VoiceStateUpdateDispatch:
+      type: object
+      required:
+        - op
+        - s
+        - t
+        - d
+      properties:
+        op:
+          type: integer
+          enum:
+            - 0
+        s:
+          type: integer
+          format: int32
+        t:
+          type: string
+          enum:
+            - VOICE_STATE_UPDATE
+        d:
+          $ref: '#/components/schemas/VoiceState'
+      description: 'Dispatch çerçevesi şablonu: `s` artan sıra numarası (oturum başına).'
+    VoiceTrackSource:
+      type: string
+      enum:
+        - microphone
+        - camera
+        - screen_share
+        - screen_share_audio
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: Bearer
+servers:
+  - url: http://localhost:8410
+    description: Yerel geliştirme (api rolü)
+    variables: {}

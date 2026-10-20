@@ -1,0 +1,43 @@
+# DONDURULMUŞ sözleşme: task.md (gorev/G32 @3eb4fca) metninden türetildi.
+# Türetme: "Dosyalar: Yalnız: Shell.tsx, VoiceCard.tsx, shell.module.css, i18n dosyaları, gerekirse yeni VoiceCard.test.tsx".
+# Dizinler "Önce oku" yollarından alındı (apps/web/src/features/shell/..., apps/web/src/i18n/...).
+version = 1
+task = "G32"
+source = "gorev/G32-ses-karti-sol-sutun.md @3eb4fcace46908f3654e1a98077ac6fe43de9199"
+
+allowed_paths = [
+  "apps/web/src/features/shell/Shell.tsx",
+  "apps/web/src/features/shell/VoiceCard.tsx",
+  "apps/web/src/features/shell/VoiceCard.test.tsx",
+  "apps/web/src/features/shell/shell.module.css",
+  "apps/web/src/i18n/*.ts",
+]
+allowed_dependencies = []          # Yasak: "yeni bağımlılık"
+generated_by = ""
+
+acceptance = [
+  'pnpm --filter ./apps/web lint && pnpm --filter ./apps/web test && pnpm --filter ./apps/web build',
+  'grep -n "VoiceCard" apps/web/src/features/shell/Shell.tsx',
+  'grep -rn "text-transform" apps/web/src',
+]
+acceptance_manual = [
+  'VoiceCard.test.tsx: bağlıyken 3 ikon düğme aria-label ile, katılımcı listesi yok, Ayrıl tıklanınca voice.leave çağrılır',
+  'Shell.tsx grep çıktısı: VoiceCard yalnız sol sütunda 1 kullanım (import satırı hariç)',
+  'text-transform grep çıktısı yalnız none',
+  'e2e seçicileri (voice-card, düğme etiketleri) bozulmadı; raporda eşleme',
+  'Raporda: 230 px sol sütunda taşmayı engelleyen CSS kuralları (tek satır)',
+]
+
+[forbidden]
+paths = ["apps/web/e2e/**", "apps/web/src/voice/engine.ts", "packages/tokens/**"]   # e2e testini değiştirmek; ses motoru; token/tasarım değeri
+paths_except = []
+patterns = [
+  # "text-transform yalnız none": none dışındaki her değer ihlal
+  { regex = 'text-transform:\s*(?!none)\S', globs = ["**/*.css"] },
+]
+notes = [
+  "API değişikliği",
+  "Yeni bağımlılık",
+  "git commit",
+  "Başka dosya gerekirse DUR ve raporla",
+]

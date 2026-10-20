@@ -1,0 +1,40 @@
+# DONDURULMUŞ sözleşme: task.md (gorev/G46 @5e22662, orijinal) metninden türetildi.
+# Türetme: açık "Dosyalar" bölümü yok. N1 adlandırdığı ChannelSettings/GuildSettings/ServerSettings + ortak hook,
+# N5 "git grep ile bul, hepsini taşı" (kullanan yerler önceden bilinmez) ve N6 token/textarea → apps/web/src/** ve packages/tokens/**.
+# pnpm-lock.yaml metinde geçmez; izinli bağımlılığın doğal sonucu olduğu için allowed_paths'e eklendi.
+version = 1
+task = "G46"
+source = "gorev/G46-pencere-konumlama-alanlar.md @5e2266252be97b62f173a5a23e670b45c5d6cfbb"
+
+allowed_paths = [
+  "apps/web/src/**",
+  "apps/web/e2e/konumlama.spec.ts",   # "yeni e2e dosyası ... İZİNLİ"
+  "apps/web/package.json",            # yalnız izinli bağımlılık satırı
+  "pnpm-lock.yaml",
+  "packages/tokens/**",               # --field-min-height tasarım token'ı
+]
+allowed_dependencies = ["@floating-ui/react"]   # "Yeni bağımlılık İZİNLİ: @floating-ui/react (yalnız bu)"
+generated_by = ""
+
+acceptance = [
+  'pnpm lint && pnpm test && pnpm build',
+  'node scripts/denetle-uyumluluk.mjs',
+]
+acceptance_manual = [
+  'vitest: ChannelSettings ad değiştir → kaydet → onClose çağrılır; kirli formda Esc → onay iletişimi',
+  'vitest/jsdom yetmezse Playwright birim-sayfa: 390x844 ve 1280x800, 4 köşe tetikleyici, Menu getBoundingClientRect görünür alanda',
+  'denetle-uyumluluk.mjs 0 ihlal',
+  'Tablo/yerleşim: taşma yok, metin kesilmesi yok',
+]
+
+[forbidden]
+paths = ["apps/web/e2e/**"]                      # "mevcut e2e dosyalarını değiştirmek"
+paths_except = ["apps/web/e2e/konumlama.spec.ts"]
+patterns = [
+  { regex = 'text-transform:\s*uppercase', globs = ["**/*.css", "**/*.tsx", "**/*.ts"] },
+]
+notes = [
+  "Başka yeni bağımlılık",
+  "Sabit Türkçe metin (i18n anahtarı)",
+  "git commit",
+]

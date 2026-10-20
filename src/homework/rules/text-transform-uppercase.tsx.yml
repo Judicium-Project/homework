@@ -1,0 +1,13 @@
+id: text-transform-uppercase
+language: tsx
+severity: error
+message: 'Remove textTransform ''uppercase'': it breaks Turkish casing (i/I); keep text as written or use locale-aware code.'
+rule:
+  kind: pair
+  all:
+    - has:
+        field: key
+        regex: '^["'']?textTransform["'']?$'
+    - has:
+        field: value
+        regex: '^["''`]uppercase["''`]$'

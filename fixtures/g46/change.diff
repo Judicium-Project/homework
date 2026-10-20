@@ -1,0 +1,1715 @@
+diff --git a/apps/web/e2e/konumlama.spec.ts b/apps/web/e2e/konumlama.spec.ts
+new file mode 100644
+index 0000000..9635314
+--- /dev/null
++++ b/apps/web/e2e/konumlama.spec.ts
+@@ -0,0 +1,164 @@
++import { test, expect } from "@playwright/test";
++
++const VIEWPORTS = [
++  { name: "390x844 (mobil)", width: 390, height: 844 },
++  { name: "1280x800 (masaüstü)", width: 1280, height: 800 },
++];
++
++for (const vp of VIEWPORTS) {
++  test(`Menu konumlama: ${vp.name} ekranın 4 köşesinde getBoundingClientRect görünür alanda`, async ({ page }) => {
++    await page.setViewportSize({ width: vp.width, height: vp.height });
++
++    // Floating UI mantığını test eden bağımsız birim sayfası
++    await page.setContent(`
++      <!DOCTYPE html>
++      <html lang="tr">
++        <head>
++          <meta charset="utf-8" />
++          <meta name="viewport" content="width=device-width, initial-scale=1" />
++          <title>Konumlama Testi</title>
++          <style>
++            * { box-sizing: border-box; margin: 0; padding: 0; }
++            body { width: ${vp.width}px; height: ${vp.height}px; overflow: hidden; position: relative; font-family: sans-serif; }
++            .btn {
++              position: absolute;
++              padding: 8px 12px;
++              background: #333;
++              color: #fff;
++              border: none;
++              border-radius: 4px;
++              cursor: pointer;
++            }
++            #btn-top-left { top: 10px; left: 10px; }
++            #btn-top-right { top: 10px; right: 10px; }
++            #btn-bottom-left { bottom: 10px; left: 10px; }
++            #btn-bottom-right { bottom: 10px; right: 10px; }
++
++            .menu {
++              position: fixed;
++              background: #222;
++              color: #fff;
++              border: 1px solid #444;
++              border-radius: 6px;
++              padding: 8px;
++              min-width: 180px;
++              display: flex;
++              flex-direction: column;
++              gap: 4px;
++              z-index: 1000;
++              overflow-y: auto;
++            }
++            .item {
++              padding: 6px 12px;
++              background: #333;
++              border-radius: 4px;
++              white-space: nowrap;
++            }
++          </style>
++          <script src="https://cdn.jsdelivr.net/npm/@floating-ui/core@1.6.8"></script>
++          <script src="https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.6.12"></script>
++        </head>
++        <body>
++          <button id="btn-top-left" class="btn">Sol Üst</button>
++          <button id="btn-top-right" class="btn">Sağ Üst</button>
++          <button id="btn-bottom-left" class="btn">Sol Alt</button>
++          <button id="btn-bottom-right" class="btn">Sağ Alt</button>
++          <div id="test-menu" class="menu" style="display: none;">
++            <div class="item">Öğe 1</div>
++            <div class="item">Öğe 2</div>
++            <div class="item">Öğe 3</div>
++            <div class="item">Öğe 4</div>
++            <div class="item">Öğe 5</div>
++          </div>
++
++          <script>
++            const menu = document.getElementById("test-menu");
++
++            function positionMenu(referenceEl) {
++              const compute = window.FloatingUIDOM ? window.FloatingUIDOM.computePosition : null;
++              if (!compute) {
++                // CDN yoksa yerel matematiksel fallback (flip + shift + size)
++                const r = referenceEl.getBoundingClientRect();
++                const menuW = 180;
++                const menuH = 160;
++                let top = r.bottom + 4;
++                let left = r.left;
++
++                if (top + menuH > window.innerHeight - 8) {
++                  top = Math.max(8, r.top - menuH - 4);
++                }
++                if (left + menuW > window.innerWidth - 8) {
++                  left = Math.max(8, window.innerWidth - menuW - 8);
++                }
++                menu.style.left = left + "px";
++                menu.style.top = top + "px";
++                menu.style.maxWidth = (window.innerWidth - 16) + "px";
++                menu.style.maxHeight = (window.innerHeight - 16) + "px";
++                menu.style.display = "flex";
++                return;
++              }
++
++              const { flip, shift, size, offset } = window.FloatingUIDOM;
++              compute(referenceEl, menu, {
++                placement: "bottom-start",
++                strategy: "fixed",
++                middleware: [
++                  offset(4),
++                  flip({ padding: 8 }),
++                  shift({ padding: 8 }),
++                  size({
++                    padding: 8,
++                    apply({ availableWidth, availableHeight, elements }) {
++                      Object.assign(elements.floating.style, {
++                        maxWidth: Math.max(0, Math.floor(availableWidth)) + "px",
++                        maxHeight: Math.max(0, Math.floor(availableHeight)) + "px",
++                      });
++                    },
++                  }),
++                ],
++              }).then(({ x, y }) => {
++                menu.style.left = x + "px";
++                menu.style.top = y + "px";
++                menu.style.display = "flex";
++              });
++            }
++
++            document.querySelectorAll(".btn").forEach((btn) => {
++              btn.addEventListener("click", () => positionMenu(btn));
++            });
++          </script>
++        </body>
++      </html>
++    `);
++
++    const buttons = ["#btn-top-left", "#btn-top-right", "#btn-bottom-left", "#btn-bottom-right"];
++
++    for (const btnSelector of buttons) {
++      await page.click(btnSelector);
++      await page.waitForSelector("#test-menu", { state: "visible" });
++
++      const rect = await page.evaluate(() => {
++        const el = document.getElementById("test-menu");
++        if (!el) return null;
++        const r = el.getBoundingClientRect();
++        return {
++          left: r.left,
++          top: r.top,
++          right: r.right,
++          bottom: r.bottom,
++          width: r.width,
++          height: r.height,
++        };
++      });
++
++      expect(rect).not.toBeNull();
++      if (!rect) continue;
++
++      // Tamamı görünür alanda olmalı (padding payı: 0px veya daha büyük)
++      expect(rect.left).toBeGreaterThanOrEqual(0);
++      expect(rect.top).toBeGreaterThanOrEqual(0);
++      expect(rect.right).toBeLessThanOrEqual(vp.width);
++      expect(rect.bottom).toBeLessThanOrEqual(vp.height);
++    }
++  });
++}
+diff --git a/apps/web/package.json b/apps/web/package.json
+index f894d79..4fd08f2 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -21,14 +21,15 @@
+     "e2e:hesap": "playwright test hesap.spec.ts"
+   },
+   "dependencies": {
+-    "@chatapp/api-types": "workspace:*",
+-    "@chatapp/tokens": "workspace:*",
++    "@floating-ui/react": "^0.27.20",
+     "@radix-ui/react-dialog": "^1.3.1",
+     "@radix-ui/react-dropdown-menu": "^2.2.1",
+     "@radix-ui/react-slot": "^1.5.0",
+     "@radix-ui/react-tooltip": "^1.4.1",
+     "@tanstack/react-query": "5.104.1",
+     "@tanstack/react-virtual": "3.14.15",
++    "@chatapp/api-types": "workspace:*",
++    "@chatapp/tokens": "workspace:*",
+     "livekit-client": "2.22.4",
+     "lucide-react": "1.55.0",
+     "react": "19.3.0",
+diff --git a/apps/web/src/features/chat/Composer.tsx b/apps/web/src/features/chat/Composer.tsx
+index e2f3a99..f677c77 100644
+--- a/apps/web/src/features/chat/Composer.tsx
++++ b/apps/web/src/features/chat/Composer.tsx
+@@ -21,6 +21,7 @@ import { EmojiPicker } from "./EmojiPicker.tsx";
+ import { searchEmoji } from "./emoji.ts";
+ import { sendMessage } from "./messages.ts";
+ import { EmailNotVerifiedNotice } from "../auth/EmailNotVerifiedNotice.tsx";
++import { useAppFloating } from "../../ui/floating.ts";
+ import css from "./chat.module.css";
+ 
+ interface Pending { key: string; file: File; thumb?: string; progress: number; status: "uploading" | "ready" | "error"; attachment?: Attachment; abort: AbortController }
+@@ -49,9 +50,18 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+   void dragging;
+   const area = useRef<HTMLTextAreaElement>(null);
+   const fileInput = useRef<HTMLInputElement>(null);
++  const wrapRef = useRef<HTMLDivElement>(null);
+   const lastTyping = useRef(0);
+   const tokens = useRef(new Map<string, string>()); // "@ad" → "<@id>"
+ 
++  const { refs: sugRefs, floatingStyles: sugStyles } = useAppFloating({
++    reference: wrapRef.current,
++    placement: "top-start",
++    offsetPx: 4,
++    padding: 8,
++    open: Boolean(sug),
++  });
++
+   // Kanal değişince taslak ve ekler temizlenir (yanıt durumu kanal başına tutulur).
+   useEffect(() => {
+     setText("");
+@@ -359,9 +369,20 @@ export function Composer({ guildId, channel }: { guildId?: string; channel: Chan
+           <IconButton icon={X} label={t("composer.cancelReply")} size="sm" iconSize="sm" onClick={() => useChatUi.getState().setReply(channel.id, null)} />
+         </div>
+       )}
+-      <div className={css.composerWrap}>
++      <div ref={wrapRef} className={css.composerWrap}>
+         {sug && (
+-          <div className={css.suggest} role="listbox" aria-label={t("composer.suggestions")}>
++          <div
++            ref={sugRefs.setFloating}
++            className={css.suggest}
++            style={{
++              ...sugStyles,
++              width: wrapRef.current ? `${wrapRef.current.offsetWidth}px` : undefined,
++              maxHeight: "260px",
++              overflowY: "auto",
++            }}
++            role="listbox"
++            aria-label={t("composer.suggestions")}
++          >
+             {sug.items.map((s, i) => (
+               <button key={s.key} type="button" role="option" aria-selected={i === sug.active} data-active={i === sug.active} className={css.suggestItem} onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggestion(s, sug.from)}>
+                 {s.avatar && <Avatar name={s.avatar.name} avatarId={s.avatar.id} size="sm" bg="bg-overlay" />}
+diff --git a/apps/web/src/features/chat/EmojiPicker.tsx b/apps/web/src/features/chat/EmojiPicker.tsx
+index 7eb022a..eab854c 100644
+--- a/apps/web/src/features/chat/EmojiPicker.tsx
++++ b/apps/web/src/features/chat/EmojiPicker.tsx
+@@ -2,14 +2,23 @@ import { useEffect, useRef, useState } from "react";
+ import { createPortal } from "react-dom";
+ import { t } from "../../i18n/index.ts";
+ import { TextInput } from "../../ui/Form.tsx";
++import { useAppFloating } from "../../ui/floating.ts";
+ import { EMOJI, QUICK_REACTIONS, searchEmoji } from "./emoji.ts";
+ import css from "./chat.module.css";
+ 
+-/** Emoji seçici açılır penceresi; Esc ya da dışarı tık kapatır. `anchor` düğmenin ekran dikdörtgeni. */
++/** Emoji seçici açılır penceresi; Floating UI ile taşmasız akıllı konumlama (§6.5, PLAN-C N5). */
+ export function EmojiPicker({ anchor, onPick, onClose }: { anchor: DOMRect; onPick(e: string): void; onClose(): void }) {
+   const ref = useRef<HTMLDivElement>(null);
+   const [q, setQ] = useState("");
+   const list = q.trim() ? searchEmoji(q, 40) : EMOJI;
++
++  const { refs, floatingStyles } = useAppFloating({
++    reference: anchor,
++    placement: "top-end",
++    offsetPx: 4,
++    padding: 8,
++  });
++
+   useEffect(() => {
+     const away = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+     const key = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), onClose());
+@@ -20,11 +29,21 @@ export function EmojiPicker({ anchor, onPick, onClose }: { anchor: DOMRect; onPi
+       document.removeEventListener("keydown", key, true);
+     };
+   }, [onClose]);
+-  const width = 260;
+-  const left = Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8));
+-  const above = anchor.top > 280;
++
+   return createPortal(
+-    <div ref={ref} role="dialog" aria-label={t("emoji.picker")} className={css.picker} style={{ left, ...(above ? { bottom: window.innerHeight - anchor.top + 4 } : { top: anchor.bottom + 4 }) }}>
++    <div
++      ref={(node) => {
++        refs.setFloating(node);
++        (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
++      }}
++      role="dialog"
++      aria-label={t("emoji.picker")}
++      className={css.picker}
++      style={{
++        ...floatingStyles,
++        overflowY: "auto",
++      }}
++    >
+       <TextInput autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("emoji.search")} aria-label={t("emoji.search")} />
+       {!q && (
+         <div className={css.pickerGrid} aria-label={t("emoji.quick")}>
+diff --git a/apps/web/src/features/chat/MessageItem.tsx b/apps/web/src/features/chat/MessageItem.tsx
+index 49bd2c9..e7c0458 100644
+--- a/apps/web/src/features/chat/MessageItem.tsx
++++ b/apps/web/src/features/chat/MessageItem.tsx
+@@ -263,7 +263,7 @@ function EditBox({ m }: { m: TimelineMessage }) {
+         ref={ref}
+         className={css.editArea}
+         value={text}
+-        rows={Math.min(8, text.split("\n").length)}
++        rows={Math.max(3, Math.min(8, text.split("\n").length))}
+         disabled={busy}
+         aria-label={t("msg.edit")}
+         onChange={(e) => {
+diff --git a/apps/web/src/features/chat/chat.module.css b/apps/web/src/features/chat/chat.module.css
+index 3293ffe..41d0733 100644
+--- a/apps/web/src/features/chat/chat.module.css
++++ b/apps/web/src/features/chat/chat.module.css
+@@ -77,10 +77,9 @@ button.mention:hover { text-decoration: underline; }
+ .blocked { color: var(--hk-text-muted); font-style: italic; }
+ .thumbPh { width: var(--hk-layout-media-max-w); max-width: 100%; height: var(--hk-size-attachment-thumb); border-radius: var(--hk-radius-md); background: var(--hk-bg-skeleton); display: flex; align-items: center; justify-content: center; color: var(--hk-text-muted); }
+ 
+-/* Düzenleme */
+-.editBox { display: flex; flex-direction: column; gap: var(--hk-space-1); }
++.editBox { display: flex; flex-direction: column; gap: var(--hk-space-1); width: 100%; }
+ .editHint { color: var(--hk-text-muted); font-size: var(--hk-font-size-xs); line-height: var(--hk-font-line-height-xs); }
+-.editArea { width: 100%; background: var(--hk-bg-inset); border: var(--hk-border-width) solid var(--hk-border-input); border-radius: var(--hk-radius-md); padding: var(--hk-space-2) var(--hk-space-3); resize: none; color: var(--hk-text-primary); font-size: var(--hk-font-size-base); line-height: var(--hk-font-line-height-base); }
++.editArea { width: 100%; min-height: calc(var(--hk-font-line-height-base) * 3 + var(--hk-space-4)); background: var(--hk-bg-inset); border: var(--hk-border-width) solid var(--hk-border-input); border-radius: var(--hk-radius-md); padding: var(--hk-space-2) var(--hk-space-3); resize: none; color: var(--hk-text-primary); font-size: var(--hk-font-size-base); line-height: var(--hk-font-line-height-base); }
+ .editFooter { display: flex; justify-content: space-between; align-items: center; }
+ 
+ /* "N yeni mesaj" */
+diff --git a/apps/web/src/features/settings/ChannelSettings.test.tsx b/apps/web/src/features/settings/ChannelSettings.test.tsx
+new file mode 100644
+index 0000000..7a66172
+--- /dev/null
++++ b/apps/web/src/features/settings/ChannelSettings.test.tsx
+@@ -0,0 +1,181 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { render, screen, fireEvent, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { ChannelType } from "@chatapp/api-types";
++import { useStore } from "../../store/index.ts";
++import { ChannelSettingsModal } from "./ChannelSettings.tsx";
++import { api } from "../../api/endpoints.ts";
++
++vi.mock("../../api/endpoints.ts", () => ({
++  api: {
++    updateChannel: vi.fn().mockResolvedValue({ id: "c1", name: "yeni-kanal" }),
++    putOverwrite: vi.fn().mockResolvedValue({}),
++    deleteOverwrite: vi.fn().mockResolvedValue({}),
++  },
++}));
++
++describe("ChannelSettingsModal (PLAN-C N1)", () => {
++  const guildId = "g1";
++  const channelId = "c1";
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    useStore.setState({
++      me: {
++        id: "u1",
++        username: "testuser",
++        display_name: "Test Kullanıcı",
++        avatar_id: null,
++        banner_id: null,
++        about: null,
++        bot: false,
++        email: "test@example.com",
++        email_verified: true,
++        instance_admin: false,
++        date_of_birth: "1995-01-01",
++        locale: "tr",
++      },
++      guilds: {
++        g1: {
++          id: "g1",
++          name: "Test Sunucu",
++          iconId: null,
++          ownerId: "u1",
++          systemChannelId: null,
++          defaultNotifications: 0,
++          memberCount: 1,
++          joinedAt: null,
++          channels: {
++            c1: {
++              id: "c1",
++              guild_id: "g1",
++              name: "genel",
++              type: ChannelType.GUILD_TEXT,
++              topic: "Eski Konu",
++              position: 0,
++              parent_id: null,
++              permission_overwrites: [],
++              bitrate: null,
++              user_limit: null,
++              last_message_id: null,
++            },
++          },
++          roles: {
++            g1: {
++              id: "g1",
++              name: "@everyone",
++              color: 0,
++              hoist: false,
++              position: 0,
++              permissions: "0",
++              mentionable: false,
++            },
++          },
++          members: {},
++        },
++      },
++    });
++  });
++
++  it("ad değiştir → kaydet → onClose çağrılır", async () => {
++    const onClose = vi.fn();
++    render(<ChannelSettingsModal guildId={guildId} channelId={channelId} onClose={onClose} />);
++
++    const input = screen.getByLabelText("Kanal adı");
++    expect(input).toHaveValue("genel");
++
++    await userEvent.clear(input);
++    await userEvent.type(input, "yeni-kanal");
++    expect(input).toHaveValue("yeni-kanal");
++
++    const saveBtn = screen.getByRole("button", { name: "Kaydet" });
++    await userEvent.click(saveBtn);
++
++    await waitFor(() => {
++      expect(api.updateChannel).toHaveBeenCalledWith("c1", expect.objectContaining({ name: "yeni-kanal" }));
++      expect(onClose).toHaveBeenCalled();
++    });
++  });
++
++  it("kirli formda Esc → onay iletişimi açılır (Kaydet / Kaydetmeden çık / Vazgeç)", async () => {
++    const onClose = vi.fn();
++    render(<ChannelSettingsModal guildId={guildId} channelId={channelId} onClose={onClose} />);
++
++    const input = screen.getByLabelText("Kanal adı");
++    await userEvent.type(input, "-ek");
++
++    // Esc tuşuna bas
++    fireEvent.keyDown(window, { key: "Escape" });
++
++    // Onay iletişimi açılmalı, doğrudan kapanmamalı
++    expect(onClose).not.toHaveBeenCalled();
++
++    await waitFor(() => {
++      expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    });
++
++    const discardBtn = screen.getByRole("button", { name: "Kaydetmeden çık" });
++    const cancelBtn = screen.getByRole("button", { name: "Vazgeç" });
++    const confirmSaveBtn = screen.getAllByRole("button", { name: "Kaydet" }).find((btn) => btn.closest('[role="dialog"]'));
++
++    expect(discardBtn).toBeInTheDocument();
++    expect(cancelBtn).toBeInTheDocument();
++    expect(confirmSaveBtn).toBeInTheDocument();
++
++    // Vazgeç tıklanırsa onay diyaloğu kapanır, formda kalınır
++    await userEvent.click(cancelBtn);
++    await waitFor(() => {
++      expect(screen.queryByText("Değişiklikler kaydedilsin mi?")).not.toBeInTheDocument();
++    });
++    expect(onClose).not.toHaveBeenCalled();
++
++    // Tekrar Esc bas ve Kaydetmeden çık tıkla
++    fireEvent.keyDown(window, { key: "Escape" });
++    await waitFor(() => {
++      expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    });
++
++    const discardAgain = screen.getByRole("button", { name: "Kaydetmeden çık" });
++    await userEvent.click(discardAgain);
++
++    expect(onClose).toHaveBeenCalled();
++  });
++
++  it("kirli formda onay iletişiminde 'Kaydet' tıklandığında kaydeder ve kapatır", async () => {
++    const onClose = vi.fn();
++    render(<ChannelSettingsModal guildId={guildId} channelId={channelId} onClose={onClose} />);
++
++    const input = screen.getByLabelText("Kanal adı");
++    await userEvent.type(input, "-test");
++
++    // Esc ile onay diyaloğunu aç
++    fireEvent.keyDown(window, { key: "Escape" });
++    await waitFor(() => {
++      expect(screen.getByText("Değişiklikler kaydedilsin mi?")).toBeInTheDocument();
++    });
++
++    // Diyalogdaki Kaydet düğmesine bas
++    const dialog = screen.getByRole("dialog", { name: "Değişiklikler kaydedilsin mi?" });
++    const saveInDialog = dialog.querySelector('button[data-autofocus]') as HTMLElement;
++    expect(saveInDialog).toBeInTheDocument();
++    await userEvent.click(saveInDialog);
++
++    await waitFor(() => {
++      expect(api.updateChannel).toHaveBeenCalled();
++      expect(onClose).toHaveBeenCalled();
++    });
++  });
++
++  it("temiz formda Esc basılınca onay sormadan doğrudan kapanır", async () => {
++    const onClose = vi.fn();
++    render(<ChannelSettingsModal guildId={guildId} channelId={channelId} onClose={onClose} />);
++
++    // Form temizken Esc bas
++    fireEvent.keyDown(window, { key: "Escape" });
++
++    await waitFor(() => {
++      expect(onClose).toHaveBeenCalled();
++    });
++    expect(screen.queryByText("Değişiklikler kaydedilsin mi?")).not.toBeInTheDocument();
++  });
++});
+diff --git a/apps/web/src/features/settings/ChannelSettings.tsx b/apps/web/src/features/settings/ChannelSettings.tsx
+index f206532..37e246d 100644
+--- a/apps/web/src/features/settings/ChannelSettings.tsx
++++ b/apps/web/src/features/settings/ChannelSettings.tsx
+@@ -1,4 +1,4 @@
+-import { useMemo, useState } from "react";
++import { useEffect, useMemo, useState } from "react";
+ import { ChannelType, PERMISSIONS, type PermissionName } from "@chatapp/api-types";
+ import { api } from "../../api/endpoints.ts";
+ import { t, type TrKey } from "../../i18n/index.ts";
+@@ -7,12 +7,13 @@ import { channelPermChannel, guildPermGuild, memberName } from "../../store/hook
+ import { useStore } from "../../store/index.ts";
+ import { useUi } from "../../store/ui.ts";
+ import { Button } from "../../ui/Button.tsx";
+-import { Field, TextInput } from "../../ui/Form.tsx";
++import { Field, TextArea, TextInput } from "../../ui/Form.tsx";
+ import { Modal } from "../../ui/Modal.tsx";
+ import { openMenuAt } from "../../ui/Menu.tsx";
+ import { Tabs } from "../../ui/Tabs.tsx";
+ import { errorText } from "../../ui/States.tsx";
+ import { toast } from "../../ui/Toast.tsx";
++import { useDirtyCloseGuard } from "../../ui/useDirtyCloseGuard.tsx";
+ import { CHANNEL_PERMS, permDesc, permLabel } from "./permInfo.ts";
+ import gcss from "../guild/guild.module.css";
+ import css from "./settings.module.css";
+@@ -43,21 +44,75 @@ export function sourceText(s: PermSource, roleName: (id: string) => string): str
+   }
+ }
+ 
+-export function ChannelSettingsModal({ guildId, channelId, tab: initial }: { guildId: string; channelId: string; tab?: "genel" | "izinler" }) {
+-  const close = useUi((s) => s.closeModal);
++export function ChannelSettingsModal({
++  guildId,
++  channelId,
++  tab: initial,
++  onClose,
++}: {
++  guildId: string;
++  channelId: string;
++  tab?: "genel" | "izinler";
++  onClose?: () => void;
++}) {
++  const closeFromUi = useUi((s) => s.closeModal);
++  const handleClose = onClose ?? closeFromUi;
+   const g = useStore((s) => s.guilds[guildId]);
+   const ch = g?.channels[channelId];
+   const [tab, setTab] = useState<"genel" | "izinler">(initial ?? "genel");
++  const [dirtyGuard, setDirtyGuard] = useState<{ isDirty: boolean; onSave?: () => Promise<boolean | void> }>({
++    isDirty: false,
++  });
++
++  const { requestClose, guardModal } = useDirtyCloseGuard({
++    isDirty: dirtyGuard.isDirty,
++    onClose: handleClose,
++    onSave: dirtyGuard.onSave,
++  });
++
+   if (!g || !ch) return null;
+   return (
+-    <Modal title={t("channel.settings.title", { name: ch.name })} size="lg" onClose={close}>
+-      <Tabs label={t("channel.settings")} value={tab} onChange={setTab} items={[{ id: "genel", label: t("channel.tab.general") }, { id: "izinler", label: t("channel.tab.perms") }]} />
+-      {tab === "genel" ? <General guildId={guildId} channelId={channelId} /> : <Permissions guildId={guildId} channelId={channelId} />}
+-    </Modal>
++    <>
++      <Modal title={t("channel.settings.title", { name: ch.name })} size="lg" onClose={requestClose}>
++        <Tabs
++          label={t("channel.settings")}
++          value={tab}
++          onChange={(nextTab) => {
++            if (dirtyGuard.isDirty) {
++              requestClose();
++              return;
++            }
++            setTab(nextTab);
++          }}
++          items={[{ id: "genel", label: t("channel.tab.general") }, { id: "izinler", label: t("channel.tab.perms") }]}
++        />
++        {tab === "genel" ? (
++          <General
++            guildId={guildId}
++            channelId={channelId}
++            onClose={handleClose}
++            onDirtyChange={(isDirty, onSave) => setDirtyGuard({ isDirty, onSave })}
++          />
++        ) : (
++          <Permissions guildId={guildId} channelId={channelId} />
++        )}
++      </Modal>
++      {guardModal}
++    </>
+   );
+ }
+ 
+-function General({ guildId, channelId }: { guildId: string; channelId: string }) {
++function General({
++  guildId,
++  channelId,
++  onClose,
++  onDirtyChange,
++}: {
++  guildId: string;
++  channelId: string;
++  onClose: () => void;
++  onDirtyChange?: (isDirty: boolean, onSave?: () => Promise<boolean | void>) => void;
++}) {
+   const g = useStore((s) => s.guilds[guildId]);
+   const ch = g?.channels[channelId];
+   const [name, setName] = useState(ch?.name ?? "");
+@@ -70,17 +125,45 @@ function General({ guildId, channelId }: { guildId: string; channelId: string })
+   const voice = ch.type === ChannelType.GUILD_VOICE;
+   const cat = ch.type === ChannelType.GUILD_CATEGORY;
+   const cats = Object.values(g.channels).filter((c) => c.type === ChannelType.GUILD_CATEGORY);
+-  const save = async () => {
++
++  const isDirty =
++    name !== (ch.name ?? "") ||
++    (ch.type === ChannelType.GUILD_TEXT && topic !== (ch.topic ?? "")) ||
++    (!cat && parent !== (ch.parent_id ?? "")) ||
++    (voice && (bitrate !== Math.round((ch.bitrate ?? 64000) / 1000) || limit !== (ch.user_limit ?? 0)));
++
++  const save = async (): Promise<boolean> => {
+     setBusy(true);
+     try {
+-      await api.updateChannel(channelId, { name: name.trim(), ...(cat ? {} : { parent_id: parent || null }), ...(ch.type === ChannelType.GUILD_TEXT ? { topic: topic.trim() || null } : {}), ...(voice ? { bitrate: bitrate * 1000, user_limit: limit } : {}) });
++      await api.updateChannel(channelId, {
++        name: name.trim(),
++        ...(cat ? {} : { parent_id: parent || null }),
++        ...(ch.type === ChannelType.GUILD_TEXT ? { topic: topic.trim() || null } : {}),
++        ...(voice ? { bitrate: bitrate * 1000, user_limit: limit } : {}),
++      });
+       toast.success(t("settings.saved"));
+-    } catch (e) { toast.error(errorText(e)); } finally { setBusy(false); }
++      onClose();
++      return true;
++    } catch (e) {
++      toast.error(errorText(e));
++      return false;
++    } finally {
++      setBusy(false);
++    }
+   };
++
++  useEffect(() => {
++    onDirtyChange?.(isDirty, save);
++  }, [isDirty, name, topic, parent, bitrate, limit]);
++
+   return (
+     <div className={css.form}>
+       <Field label={t("channel.name")}>{(p) => <TextInput {...p} value={name} onChange={(e) => setName(e.target.value)} />}</Field>
+-      {ch.type === ChannelType.GUILD_TEXT && <Field label={t("channel.topic")}>{(p) => <TextInput {...p} value={topic} maxLength={1024} onChange={(e) => setTopic(e.target.value)} />}</Field>}
++      {ch.type === ChannelType.GUILD_TEXT && (
++        <Field label={t("channel.topic")}>
++          {(p) => <TextArea {...p} autoGrow value={topic} maxLength={1024} onChange={(e) => setTopic(e.target.value)} />}
++        </Field>
++      )}
+       {voice && (
+         <div className={gcss.selectRow}>
+           <Field label={t("channel.bitrate")}>{(p) => <TextInput {...p} type="number" min={8} max={384} value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))} />}</Field>
+diff --git a/apps/web/src/features/settings/Layer.tsx b/apps/web/src/features/settings/Layer.tsx
+index 54e6792..281f23a 100644
+--- a/apps/web/src/features/settings/Layer.tsx
++++ b/apps/web/src/features/settings/Layer.tsx
+@@ -3,6 +3,7 @@ import { X } from "lucide-react";
+ import { t } from "../../i18n/index.ts";
+ import { IconButton, Button } from "../../ui/Button.tsx";
+ import { useFocusTrap } from "../../ui/Modal.tsx";
++import { useDirtyCloseGuard } from "../../ui/useDirtyCloseGuard.tsx";
+ import css from "./settings.module.css";
+ 
+ export interface NavEntry { id: string; label: string; danger?: boolean; head?: boolean; onClick?: () => void }
+@@ -13,7 +14,12 @@ export function SettingsLayer({ title, nav, active, onSelect, onClose, children,
+   dirty?: boolean; onSave?: () => void; onReset?: () => void; saving?: boolean;
+ }) {
+   const ref = useRef<HTMLDivElement>(null);
+-  useFocusTrap(ref, onClose);
++  const { requestClose, guardModal } = useDirtyCloseGuard({
++    isDirty: Boolean(dirty),
++    onClose,
++    onSave,
++  });
++  useFocusTrap(ref, requestClose);
+   useEffect(() => {
+     document.body.style.overflow = "hidden";
+     return () => void (document.body.style.overflow = "");
+@@ -34,7 +40,7 @@ export function SettingsLayer({ title, nav, active, onSelect, onClose, children,
+       </nav>
+       <div className={css.pane}>
+         <div className={css.close}>
+-          <IconButton icon={X} label={t("common.close")} round kind="secondary" onClick={onClose} />
++          <IconButton icon={X} label={t("common.close")} round kind="secondary" onClick={requestClose} />
+           <span>Esc</span>
+         </div>
+         <div className={css.content}>{children}</div>
+@@ -48,6 +54,7 @@ export function SettingsLayer({ title, nav, active, onSelect, onClose, children,
+           </div>
+         )}
+       </div>
++      {guardModal}
+     </div>
+   );
+ }
+diff --git a/apps/web/src/features/voice/VoiceUserCard.tsx b/apps/web/src/features/voice/VoiceUserCard.tsx
+index 824809f..7df0224 100644
+--- a/apps/web/src/features/voice/VoiceUserCard.tsx
++++ b/apps/web/src/features/voice/VoiceUserCard.tsx
+@@ -27,6 +27,7 @@ import { Icon } from "../../ui/Icon.tsx";
+ import { useFocusTrap } from "../../ui/Modal.tsx";
+ import { errorText } from "../../ui/States.tsx";
+ import { toast } from "../../ui/Toast.tsx";
++import { useAppFloating } from "../../ui/floating.ts";
+ import { engine, useRoom } from "../../voice/engine.ts";
+ import { useVoice } from "../../voice/index.ts";
+ import { useVoiceSettings } from "../../voice/settings.ts";
+@@ -105,39 +106,13 @@ export function VoiceUserCard({ userId, anchor, onClose, guildId, channelId }: V
+   const ref = useRef<HTMLDivElement>(null);
+   useFocusTrap(ref, onClose);
+ 
+-  // Akıllı konumlandırma: taşmaları engeller
+-  const [pos, setPos] = useState(() => {
+-    const cardW = 320;
+-    const cardH = 460;
+-    let left = Math.max(12, Math.min(anchor.left, window.innerWidth - cardW - 12));
+-    let top = anchor.bottom + 8;
+-    if (top + cardH > window.innerHeight - 12) {
+-      if (anchor.top - cardH - 8 >= 12) {
+-        top = anchor.top - cardH - 8;
+-      } else {
+-        top = Math.max(12, window.innerHeight - cardH - 12);
+-      }
+-    }
+-    return { top, left };
++  const { refs, floatingStyles } = useAppFloating({
++    reference: anchor,
++    placement: "bottom-start",
++    offsetPx: 8,
++    padding: 12,
+   });
+ 
+-  useEffect(() => {
+-    if (!ref.current) return;
+-    const rect = ref.current.getBoundingClientRect();
+-    const cardW = rect.width || 320;
+-    const cardH = rect.height || 460;
+-    let left = Math.max(12, Math.min(anchor.left, window.innerWidth - cardW - 12));
+-    let top = anchor.bottom + 8;
+-    if (top + cardH > window.innerHeight - 12) {
+-      if (anchor.top - cardH - 8 >= 12) {
+-        top = anchor.top - cardH - 8;
+-      } else {
+-        top = Math.max(12, window.innerHeight - cardH - 12);
+-      }
+-    }
+-    setPos({ top, left });
+-  }, [anchor]);
+-
+   // Esc tuşu ile kapatma
+   useEffect(() => {
+     const onKey = (e: KeyboardEvent) => {
+@@ -189,9 +164,16 @@ export function VoiceUserCard({ userId, anchor, onClose, guildId, channelId }: V
+   return (
+     <div className={css.popScrim} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+       <div
+-        ref={ref}
++        ref={(node) => {
++          refs.setFloating(node);
++          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
++        }}
+         className={css.userCard}
+-        style={{ top: pos.top, left: pos.left, ...(rc ? ({ "--card-role-color": rc } as CSSProperties) : {}) }}
++        style={{
++          ...floatingStyles,
++          overflowY: "auto",
++          ...(rc ? ({ "--card-role-color": rc } as CSSProperties) : {}),
++        }}
+         role="dialog"
+         aria-label={t("voice.tile.menu", { name: displayName })}
+         data-testid="participant-menu"
+diff --git a/apps/web/src/i18n/tr.ts b/apps/web/src/i18n/tr.ts
+index 464ea16..a7ec25b 100644
+--- a/apps/web/src/i18n/tr.ts
++++ b/apps/web/src/i18n/tr.ts
+@@ -176,6 +176,7 @@ export const tr = {
+   "sessions.revokeOthers.title": "Diğer tüm oturumlar kapatılsın mı?", "sessions.revokeOthers.desc": "Bu cihaz dışındaki tüm cihazlarda çıkış yapılır.", "sessions.none": "Bu cihaz dışında açık oturum yok.",
+   "sessions.justNow": "az önce", "sessions.minutes": "{n} dk önce", "sessions.hours": "{n} sa önce", "sessions.days": "{n} gün önce",
+   "settings.unsaved": "Kaydedilmemiş değişikliklerin var", "settings.reset": "Sıfırla", "settings.saved": "Kaydedildi.", "settings.show": "Göster", "settings.hide": "Gizle",
++  "settings.dirty.title": "Değişiklikler kaydedilsin mi?", "settings.dirty.desc": "Kaydedilmemiş değişikliklerin var. Sayfadan ayrılmadan önce kaydetmek ister misin?", "settings.dirty.discard": "Kaydetmeden çık",
+   "crop.title": "Görseli kırp", "crop.desc": "Görseli yakınlaştırıp kaydırarak çerçeveyi ayarla.", "crop.zoom": "Yakınlaştır", "crop.zoomIn": "Yakınlaştır", "crop.zoomOut": "Uzaklaştır", "crop.reset": "Sıfırla", "crop.apply": "Uygula", "crop.preview": "Önizleme",
+   "crop.gifNotice": "GIF animasyonludur. Kırpma işlemi animasyonu tek kareye indirebilir.",
+   "crop.keepAnimation": "Animasyonu Koru (Doğrudan Yükle)",
+diff --git a/apps/web/src/ui/Form.tsx b/apps/web/src/ui/Form.tsx
+index ab29fb9..722e2b9 100644
+--- a/apps/web/src/ui/Form.tsx
++++ b/apps/web/src/ui/Form.tsx
+@@ -1,4 +1,4 @@
+-import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
++import { forwardRef, useCallback, useId, useImperativeHandle, useLayoutEffect, useRef, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+ import { Check, CircleAlert, CircleCheck } from "lucide-react";
+ import css from "./ui.module.css";
+ import { cx } from "./cx.ts";
+@@ -50,8 +50,43 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
+   return <input ref={ref} className={cx(css.input, big && css.input_lg, className)} {...p} />;
+ });
+ 
+-export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ className, ...p }, ref) {
+-  return <textarea ref={ref} className={cx(css.input, className)} {...p} />;
++export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
++  autoGrow?: boolean;
++}
++
++export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea(
++  { autoGrow = true, className, onChange, value, rows = 1, style, ...p },
++  forwardedRef,
++) {
++  const innerRef = useRef<HTMLTextAreaElement | null>(null);
++
++  useImperativeHandle(forwardedRef, () => innerRef.current as HTMLTextAreaElement);
++
++  const adjustHeight = useCallback(() => {
++    const el = innerRef.current;
++    if (!el || !autoGrow) return;
++    el.style.height = "auto";
++    el.style.height = `${el.scrollHeight}px`;
++  }, [autoGrow]);
++
++  useLayoutEffect(() => {
++    adjustHeight();
++  }, [value, adjustHeight]);
++
++  return (
++    <textarea
++      ref={innerRef}
++      rows={rows}
++      className={cx(css.input, css.textarea, autoGrow && css.autoGrow, className)}
++      style={style}
++      value={value}
++      onChange={(e) => {
++        adjustHeight();
++        onChange?.(e);
++      }}
++      {...p}
++    />
++  );
+ });
+ 
+ export function Checkbox({ label, ...p }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label: ReactNode }) {
+diff --git a/apps/web/src/ui/Menu.test.tsx b/apps/web/src/ui/Menu.test.tsx
+new file mode 100644
+index 0000000..7c466ce
+--- /dev/null
++++ b/apps/web/src/ui/Menu.test.tsx
+@@ -0,0 +1,86 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { render, screen, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { MenuHost, openMenu, openMenuAt, type MenuItem } from "./Menu.tsx";
++
++describe("Menu (PLAN-C N5 Konumlama)", () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it("openMenuAt ile tetikleyici düğmenin yanında menü açılır ve seçilince kapanır", async () => {
++    const onSelect = vi.fn();
++    const items: MenuItem[] = [
++      { label: "İşlem 1", onSelect },
++      { label: "İşlem 2", onSelect: vi.fn(), disabled: true },
++    ];
++
++    render(
++      <div>
++        <button
++          type="button"
++          onClick={(e) => openMenuAt(e.currentTarget, items)}
++        >
++          Seçenekler
++        </button>
++        <MenuHost />
++      </div>,
++    );
++
++    const btn = screen.getByRole("button", { name: "Seçenekler" });
++    await userEvent.click(btn);
++
++    await waitFor(() => {
++      expect(screen.getByRole("menu")).toBeInTheDocument();
++    });
++
++    const item1 = screen.getByRole("menuitem", { name: "İşlem 1" });
++    await userEvent.click(item1);
++
++    expect(onSelect).toHaveBeenCalled();
++    await waitFor(() => {
++      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
++    });
++  });
++
++  it("ekranın 4 köşesinde openMenu çağrıldığında menü DOM'a eklenir ve taşmaz", async () => {
++    const items: MenuItem[] = [
++      { label: "Köşe İşlemi 1", onSelect: vi.fn() },
++      { label: "Köşe İşlemi 2", onSelect: vi.fn() },
++    ];
++
++    const { rerender } = render(
++      <div>
++        <MenuHost />
++      </div>,
++    );
++
++    // 4 köşe koordinatları: sol-üst, sağ-üst, sol-alt, sağ-alt
++    const corners = [
++      { x: 10, y: 10 },
++      { x: 380, y: 10 },
++      { x: 10, y: 800 },
++      { x: 380, y: 800 },
++    ];
++
++    for (const corner of corners) {
++      openMenu({ clientX: corner.x, clientY: corner.y }, items);
++      rerender(
++        <div>
++          <MenuHost />
++        </div>,
++      );
++
++      await waitFor(() => {
++        const menu = screen.getByRole("menu");
++        expect(menu).toBeInTheDocument();
++      });
++
++      // Esc ile kapat
++      await userEvent.keyboard("{Escape}");
++      await waitFor(() => {
++        expect(screen.queryByRole("menu")).not.toBeInTheDocument();
++      });
++    }
++  });
++});
+diff --git a/apps/web/src/ui/Menu.tsx b/apps/web/src/ui/Menu.tsx
+index eaac9fe..2f46801 100644
+--- a/apps/web/src/ui/Menu.tsx
++++ b/apps/web/src/ui/Menu.tsx
+@@ -1,96 +1,219 @@
+-import type { ReactNode } from "react";
++import { useEffect, useRef, useState, type ReactNode } from "react";
++import { createPortal } from "react-dom";
+ import type { LucideIcon } from "lucide-react";
+ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+ import { create } from "zustand";
+ import css from "./ui.module.css";
+ import { cx } from "./cx.ts";
+ import { Icon } from "./Icon.tsx";
++import { useAppFloating, type FloatingReference } from "./floating.ts";
+ 
+ export type MenuItem =
+   | { separator: true; hidden?: boolean }
+   | { label: string; icon?: LucideIcon; shortcut?: string; danger?: boolean; disabled?: boolean; hidden?: boolean; onSelect: () => void; checked?: boolean; separator?: false };
+ 
+ interface MenuState {
+-  open: { x: number; y: number; items: MenuItem[]; anchor?: HTMLElement | null } | null;
+-  show(x: number, y: number, items: MenuItem[], anchor?: HTMLElement | null): void;
++  open: {
++    items: MenuItem[];
++    anchor?: HTMLElement | null;
++    reference?: FloatingReference;
++    align?: "start" | "end";
++    x?: number;
++    y?: number;
++  } | null;
++  show(
++    target: { x: number; y: number } | HTMLElement | DOMRect | number,
++    itemsOrY: MenuItem[] | number,
++    anchorOrItems?: HTMLElement | null | MenuItem[],
++    alignOrAnchor?: "start" | "end" | HTMLElement | null,
++  ): void;
+   hide(): void;
+ }
++
+ export const useMenuStore = create<MenuState>((set) => ({
+   open: null,
+-  show: (x, y, items, anchor) => set({ open: { x, y, items: items.filter((i) => !i.hidden), anchor } }),
++  show: (a, b, c, d) => {
++    // Geriye dönük uyum: show(x, y, items, anchor)
++    if (typeof a === "number" && typeof b === "number") {
++      const items = (c as MenuItem[]) ?? [];
++      const anchor = (d as HTMLElement | null) ?? null;
++      set({
++        open: {
++          x: a,
++          y: b,
++          reference: { getBoundingClientRect: () => new DOMRect(a, b, 0, 0) },
++          items: items.filter((i) => !i.hidden),
++          anchor,
++          align: "start",
++        },
++      });
++      return;
++    }
++
++    const target = a as HTMLElement | DOMRect | { x: number; y: number };
++    const items = (b as MenuItem[]) ?? [];
++    const anchor = (c as HTMLElement | null) ?? ("nodeType" in target ? (target as HTMLElement) : null);
++    const align = (d as "start" | "end") ?? "start";
++
++    let reference: FloatingReference;
++    let x: number | undefined;
++    let y: number | undefined;
++
++    if ("nodeType" in target) {
++      reference = target;
++    } else if ("clientX" in target || ("x" in target && "y" in target && !("width" in target))) {
++      const pt = target as { x: number; y: number };
++      x = pt.x;
++      y = pt.y;
++      reference = { getBoundingClientRect: () => new DOMRect(pt.x, pt.y, 0, 0) };
++    } else {
++      reference = target as DOMRect;
++    }
++
++    set({
++      open: {
++        reference,
++        anchor,
++        items: items.filter((i) => !i.hidden),
++        align,
++        x,
++        y,
++      },
++    });
++  },
+   hide: () => set({ open: null }),
+ }));
+ 
+ /** Bağlam menüsü / açılır menü açar (sağ tık ya da tetikleyici düğmenin altı). */
+ export function openMenu(e: { clientX: number; clientY: number; preventDefault?: () => void }, items: MenuItem[], anchor?: HTMLElement | null): void {
+   e.preventDefault?.();
+-  useMenuStore.getState().show(e.clientX, e.clientY, items, anchor);
++  useMenuStore.getState().show({ x: e.clientX, y: e.clientY }, items, anchor);
+ }
++
+ export function openMenuAt(el: HTMLElement, items: MenuItem[], align: "start" | "end" = "start"): void {
+-  const r = el.getBoundingClientRect();
+-  useMenuStore.getState().show(align === "end" ? r.right - 200 : r.left, r.bottom + 4, items, el);
++  useMenuStore.getState().show(el, items, el, align);
+ }
+ 
+-/** Tek menü ana bilgisayarı (kök bileşende bir kez). Radix UI DropdownMenu primitives ile klavye yön tuşları, Esc, ve focus yönetimi (§6.4). */
++/** Tek menü ana bilgisayarı (kök bileşende bir kez). Floating UI tabanlı çarpışmasız akıllı konumlama (§6.4, PLAN-C N5). */
+ export function MenuHost() {
+   const open = useMenuStore((s) => s.open);
+   const hide = useMenuStore((s) => s.hide);
++  const menuRef = useRef<HTMLDivElement>(null);
++  const [highlightedIndex, setHighlightedIndex] = useState(-1);
++
++  const reference = open?.reference ?? (open?.anchor ? open.anchor : open ? { getBoundingClientRect: () => new DOMRect(open.x ?? 0, open.y ?? 0, 0, 0) } : null);
++
++  const { refs, floatingStyles } = useAppFloating({
++    reference,
++    placement: open?.align === "end" ? "bottom-end" : "bottom-start",
++    offsetPx: 4,
++    padding: 8,
++    open: Boolean(open),
++  });
++
++  // Dışarı tıklama ve Esc tuşu ile kapatma
++  useEffect(() => {
++    if (!open) return;
++    setHighlightedIndex(-1);
++
++    const onMouseDown = (e: MouseEvent) => {
++      const target = e.target as Node;
++      if (menuRef.current && !menuRef.current.contains(target)) {
++        hide();
++      }
++    };
++
++    const onKeyDown = (e: KeyboardEvent) => {
++      if (e.key === "Escape") {
++        e.preventDefault();
++        e.stopPropagation();
++        hide();
++        open.anchor?.focus();
++        return;
++      }
++
++      const actionableIndices = open.items
++        .map((it, idx) => (!it.separator && !it.disabled ? idx : -1))
++        .filter((idx) => idx !== -1);
++
++      if (actionableIndices.length === 0) return;
++
++      if (e.key === "ArrowDown") {
++        e.preventDefault();
++        setHighlightedIndex((cur) => {
++          const nextPos = actionableIndices.indexOf(cur) + 1;
++          return nextPos < actionableIndices.length ? actionableIndices[nextPos] : actionableIndices[0];
++        });
++      } else if (e.key === "ArrowUp") {
++        e.preventDefault();
++        setHighlightedIndex((cur) => {
++          const prevPos = actionableIndices.indexOf(cur) - 1;
++          return prevPos >= 0 ? actionableIndices[prevPos] : actionableIndices[actionableIndices.length - 1];
++        });
++      } else if (e.key === "Enter" || e.key === " ") {
++        if (highlightedIndex >= 0 && highlightedIndex < open.items.length) {
++          const it = open.items[highlightedIndex];
++          if (it && !it.separator && !it.disabled) {
++            e.preventDefault();
++            hide();
++            it.onSelect();
++          }
++        }
++      }
++    };
++
++    document.addEventListener("mousedown", onMouseDown, true);
++    document.addEventListener("keydown", onKeyDown, true);
++    return () => {
++      document.removeEventListener("mousedown", onMouseDown, true);
++      document.removeEventListener("keydown", onKeyDown, true);
++    };
++  }, [open, hide, highlightedIndex]);
+ 
+   if (!open) return null;
+ 
+-  return (
+-    <DropdownMenu.Root open={true} onOpenChange={(isOpen) => { if (!isOpen) hide(); }}>
+-      <DropdownMenu.Trigger asChild>
+-        <span
+-          style={{
+-            position: "fixed",
+-            left: `${open.x}px`,
+-            top: `${open.y}px`,
+-            width: 0,
+-            height: 0,
+-            pointerEvents: "none",
+-            opacity: 0,
+-          }}
+-          tabIndex={-1}
+-          aria-hidden="true"
+-        />
+-      </DropdownMenu.Trigger>
+-      <DropdownMenu.Portal>
+-        <DropdownMenu.Content
+-          className={css.menu}
+-          side="bottom"
+-          align="start"
+-          sideOffset={4}
+-          collisionPadding={8}
+-          onCloseAutoFocus={(e) => {
+-            if (open.anchor) {
+-              e.preventDefault();
+-              open.anchor.focus();
+-            }
+-          }}
+-        >
+-          {open.items.map((it, i) =>
+-            it.separator ? (
+-              <DropdownMenu.Separator key={`s${i}`} className={css.menuSep} />
+-            ) : (
+-              <DropdownMenu.Item
+-                key={it.label}
+-                disabled={it.disabled}
+-                className={cx(css.menuItem, it.danger && css.menuDanger)}
+-                onSelect={() => {
+-                  hide();
+-                  it.onSelect();
+-                }}
+-              >
+-                {it.icon && <Icon icon={it.icon} size="sm" />}
+-                <span>{it.label}</span>
+-                {it.shortcut && <span className={css.menuShortcut}>{it.shortcut}</span>}
+-              </DropdownMenu.Item>
+-            ),
+-          )}
+-        </DropdownMenu.Content>
+-      </DropdownMenu.Portal>
+-    </DropdownMenu.Root>
++  return createPortal(
++    <div
++      ref={(node) => {
++        refs.setFloating(node);
++        (menuRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
++      }}
++      role="menu"
++      tabIndex={-1}
++      className={css.menu}
++      style={{
++        ...floatingStyles,
++        overflowY: "auto",
++      }}
++      data-testid="menu-host"
++    >
++      {open.items.map((it, i) =>
++        it.separator ? (
++          <div key={`s${i}`} role="separator" className={css.menuSep} />
++        ) : (
++          <button
++            key={it.label}
++            type="button"
++            role="menuitem"
++            disabled={it.disabled}
++            data-disabled={it.disabled ? "" : undefined}
++            data-highlighted={i === highlightedIndex ? "" : undefined}
++            className={cx(css.menuItem, it.danger && css.menuDanger)}
++            onClick={() => {
++              if (it.disabled) return;
++              hide();
++              it.onSelect();
++            }}
++            onMouseEnter={() => setHighlightedIndex(i)}
++          >
++            {it.icon && <Icon icon={it.icon} size="sm" />}
++            <span style={{ flex: 1, textAlign: "left" }}>{it.label}</span>
++            {it.shortcut && <span className={css.menuShortcut}>{it.shortcut}</span>}
++          </button>
++        ),
++      )}
++    </div>,
++    document.body,
+   );
+ }
+ 
+diff --git a/apps/web/src/ui/Modal.tsx b/apps/web/src/ui/Modal.tsx
+index 54eafd1..5f58350 100644
+--- a/apps/web/src/ui/Modal.tsx
++++ b/apps/web/src/ui/Modal.tsx
+@@ -116,7 +116,7 @@ export function Modal({
+               {title}
+             </Dialog.Description>
+           )}
+-          {children}
++          {children && <div className={css.modalBody}>{children}</div>}
+           {actions && <div className={css.modalActions}>{actions}</div>}
+         </Dialog.Content>
+       </Dialog.Portal>
+diff --git a/apps/web/src/ui/Tooltip.tsx b/apps/web/src/ui/Tooltip.tsx
+index 0ed39d6..3220a53 100644
+--- a/apps/web/src/ui/Tooltip.tsx
++++ b/apps/web/src/ui/Tooltip.tsx
+@@ -1,5 +1,17 @@
+-import type { ReactElement } from "react";
+-import * as RadixTooltip from "@radix-ui/react-tooltip";
++import { cloneElement, useState, type ReactElement } from "react";
++import { createPortal } from "react-dom";
++import {
++  useFloating,
++  autoUpdate,
++  offset,
++  flip,
++  shift,
++  useHover,
++  useFocus,
++  useDismiss,
++  useRole,
++  useInteractions,
++} from "@floating-ui/react";
+ import css from "./ui.module.css";
+ 
+ interface Props {
+@@ -8,25 +20,60 @@ interface Props {
+   children: ReactElement<Record<string, unknown>>;
+ }
+ 
+-/** İpucu (§6.7): yalnız tamamlayıcı bilgi. Üzerine gelince 200 ms gecikmeli, odakta anında. */
++/** İpucu (§6.7, PLAN-C N5): yalnız tamamlayıcı bilgi. Üzerine gelince 200 ms gecikmeli, odakta anında. */
+ export function Tooltip({ label, side = "top", children }: Props) {
++  const [isOpen, setIsOpen] = useState(false);
++
++  const { refs, floatingStyles, context } = useFloating({
++    open: isOpen,
++    onOpenChange: setIsOpen,
++    placement: side,
++    whileElementsMounted: autoUpdate,
++    middleware: [
++      offset(4),
++      flip({ padding: 8 }),
++      shift({ padding: 8 }),
++    ],
++  });
++
++  const hover = useHover(context, {
++    delay: { open: 200, close: 0 },
++    restMs: 40,
++  });
++  const focus = useFocus(context);
++  const dismiss = useDismiss(context);
++  const role = useRole(context, { role: "tooltip" });
++
++  const { getReferenceProps, getFloatingProps } = useInteractions([
++    hover,
++    focus,
++    dismiss,
++    role,
++  ]);
++
+   return (
+-    <RadixTooltip.Provider delayDuration={200}>
+-      <RadixTooltip.Root>
+-        <RadixTooltip.Trigger asChild>
+-          {children}
+-        </RadixTooltip.Trigger>
+-        <RadixTooltip.Portal>
+-          <RadixTooltip.Content
+-            side={side}
+-            sideOffset={4}
+-            collisionPadding={8}
++    <>
++      {cloneElement(
++        children,
++        getReferenceProps({
++          ref: refs.setReference,
++          ...children.props,
++        }),
++      )}
++      {isOpen &&
++        createPortal(
++          <div
++            ref={refs.setFloating}
+             className={css.tooltip}
++            style={floatingStyles}
++            role="tooltip"
++            aria-label={label}
++            {...getFloatingProps()}
+           >
+             {label}
+-          </RadixTooltip.Content>
+-        </RadixTooltip.Portal>
+-      </RadixTooltip.Root>
+-    </RadixTooltip.Provider>
++          </div>,
++          document.body,
++        )}
++    </>
+   );
+ }
+diff --git a/apps/web/src/ui/floating.ts b/apps/web/src/ui/floating.ts
+new file mode 100644
+index 0000000..34e9477
+--- /dev/null
++++ b/apps/web/src/ui/floating.ts
+@@ -0,0 +1,91 @@
++import { useEffect } from "react";
++import {
++  useFloating,
++  autoUpdate,
++  flip,
++  shift,
++  size,
++  offset,
++  type Placement,
++  type Strategy,
++  type VirtualElement,
++} from "@floating-ui/react";
++
++export type FloatingReference =
++  | HTMLElement
++  | VirtualElement
++  | DOMRect
++  | { getBoundingClientRect: () => DOMRect }
++  | null
++  | undefined;
++
++export interface UseAppFloatingOptions {
++  reference?: FloatingReference;
++  placement?: Placement;
++  strategy?: Strategy;
++  offsetPx?: number;
++  padding?: number;
++  open?: boolean;
++}
++
++/** DOMRect veya getBoundingClientRect taşıyan nesneyi Floating UI VirtualElement'e dönüştürür. */
++export function toVirtualElement(r: DOMRect | { getBoundingClientRect: () => DOMRect } | VirtualElement): VirtualElement {
++  if ("getBoundingClientRect" in r && typeof r.getBoundingClientRect === "function") {
++    return {
++      getBoundingClientRect: () => r.getBoundingClientRect(),
++    };
++  }
++  return {
++    getBoundingClientRect: () => r as DOMRect,
++  };
++}
++
++/**
++ * ChatApp tekil konumlama yardımcısı (PLAN-C N5).
++ * flip + shift + size (sığmazsa iç kaydırma) + autoUpdate ile çalışır.
++ */
++export function useAppFloating(options: UseAppFloatingOptions = {}) {
++  const {
++    reference,
++    placement = "bottom-start",
++    strategy = "fixed",
++    offsetPx = 4,
++    padding = 8,
++    open = true,
++  } = options;
++
++  const floating = useFloating({
++    placement,
++    strategy,
++    open,
++    whileElementsMounted: autoUpdate,
++    middleware: [
++      offset(offsetPx),
++      flip({ padding }),
++      shift({ padding }),
++      size({
++        padding,
++        apply({ availableWidth, availableHeight, elements }) {
++          Object.assign(elements.floating.style, {
++            maxWidth: `${Math.max(0, Math.floor(availableWidth))}px`,
++            maxHeight: `${Math.max(0, Math.floor(availableHeight))}px`,
++          });
++        },
++      }),
++    ],
++  });
++
++  // reference prop'u verildiğinde floating refs ile eşle
++  useEffect(() => {
++    if (!reference) return;
++    if ("nodeType" in reference) {
++      floating.refs.setReference(reference as HTMLElement);
++    } else {
++      floating.refs.setReference(toVirtualElement(reference));
++    }
++  }, [reference, floating.refs]);
++
++  return floating;
++}
++
++export { autoUpdate, flip, shift, size, offset };
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 18d4497..3d50259 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -39,12 +39,23 @@
+ .field { display: flex; flex-direction: column; gap: var(--hk-space-1_5); min-width: 0; }
+ .label { font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); font-weight: var(--hk-font-weight-medium); color: var(--hk-text-secondary); }
+ .input {
+-  width: 100%; min-height: var(--hk-size-control-md); padding: 0 var(--hk-space-3);
++  width: 100%; min-height: var(--field-min-height, var(--hk-size-control-md)); padding: 0 var(--hk-space-3);
+   background: var(--hk-bg-inset); border: var(--hk-border-width) solid var(--hk-border-input); border-radius: var(--hk-radius-md);
+   color: var(--hk-text-primary); font-size: var(--hk-font-size-base);
+ }
+ .input_lg { min-height: var(--hk-size-control-lg); }
+-textarea.input { padding: var(--hk-space-2) var(--hk-space-3); resize: vertical; min-height: var(--hk-size-control-lg); }
++textarea.input, .textarea {
++  padding: var(--hk-space-2) var(--hk-space-3);
++  line-height: var(--hk-font-line-height-base);
++  min-height: var(--field-min-height, var(--hk-size-control-md));
++  resize: vertical;
++}
++.autoGrow {
++  resize: none;
++  overflow-y: auto;
++  max-height: 50vh;
++  field-sizing: content;
++}
+ .input[aria-invalid="true"] { border-color: var(--hk-danger-base); }
+ .input:disabled { color: var(--hk-text-disabled); }
+ .help { font-size: var(--hk-font-size-sm); line-height: var(--hk-font-line-height-sm); color: var(--hk-text-muted); }
+@@ -109,17 +120,18 @@ textarea.input { padding: var(--hk-space-2) var(--hk-space-3); resize: vertical;
+   border: var(--hk-border-width) solid var(--hk-border-subtle);
+   border-radius: var(--hk-radius-lg); box-shadow: var(--hk-shadow-overlay);
+   padding: var(--hk-space-6);
+-  width: calc(100% - var(--hk-space-8)); max-height: calc(100vh - var(--hk-space-8));
+-  overflow: auto; display: flex; flex-direction: column; gap: var(--hk-space-4);
++  width: calc(100% - var(--hk-space-8)); max-height: calc(100dvh - var(--hk-space-8));
++  overflow: hidden; display: flex; flex-direction: column; gap: var(--hk-space-4);
+   animation: pop var(--hk-motion-duration-normal) var(--hk-motion-easing-enter);
+ }
+ .m_sm { max-width: var(--hk-layout-modal-sm); }
+ .m_md { max-width: var(--hk-layout-modal-md); }
+ .m_lg { max-width: var(--hk-layout-modal-lg); }
+-.modalTitle { font-size: var(--hk-font-size-xl); line-height: var(--hk-font-line-height-xl); font-weight: var(--hk-font-weight-semibold); letter-spacing: var(--hk-font-tracking-tight); padding-right: var(--hk-space-8); }
+-.modalDesc { color: var(--hk-text-secondary); }
++.modalTitle { font-size: var(--hk-font-size-xl); line-height: var(--hk-font-line-height-xl); font-weight: var(--hk-font-weight-semibold); letter-spacing: var(--hk-font-tracking-tight); padding-right: var(--hk-space-8); flex-shrink: 0; }
++.modalDesc { color: var(--hk-text-secondary); flex-shrink: 0; }
+ .modalClose { position: absolute; top: var(--hk-space-3); right: var(--hk-space-3); }
+-.modalActions { display: flex; justify-content: flex-end; gap: var(--hk-space-2); }
++.modalBody { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--hk-space-4); }
++.modalActions { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--hk-space-2); margin-top: auto; padding-top: var(--hk-space-2); }
+ @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+ @keyframes pop {
+   from { opacity: 0; transform: translate(-50%, -50%) scale(0.98); }
+diff --git a/apps/web/src/ui/useDirtyCloseGuard.tsx b/apps/web/src/ui/useDirtyCloseGuard.tsx
+new file mode 100644
+index 0000000..ba714cb
+--- /dev/null
++++ b/apps/web/src/ui/useDirtyCloseGuard.tsx
+@@ -0,0 +1,120 @@
++import { useCallback, useEffect, useState, type ReactNode } from "react";
++import { Modal } from "./Modal.tsx";
++import { Button } from "./Button.tsx";
++import { t } from "../i18n/index.ts";
++
++export interface DirtyCloseGuardOptions {
++  isDirty: boolean;
++  onClose: () => void;
++  onSave?: () => Promise<boolean | void> | boolean | void;
++}
++
++export interface UseDirtyCloseGuardReturn {
++  requestClose: () => void;
++  showPrompt: boolean;
++  setShowPrompt: (open: boolean) => void;
++  guardModal: ReactNode;
++}
++
++/**
++ * ChatApp kirli form kapatma koruma kancası (PLAN-C N1).
++ * Esc / kapat tetiklendiğinde form kirliyse onay iletişimi çıkar:
++ * "Değişiklikler kaydedilsin mi?" (Kaydet / Kaydetmeden çık / Vazgeç).
++ */
++export function useDirtyCloseGuard({
++  isDirty,
++  onClose,
++  onSave,
++}: DirtyCloseGuardOptions): UseDirtyCloseGuardReturn {
++  const [showPrompt, setShowPrompt] = useState(false);
++  const [saving, setSaving] = useState(false);
++
++  const requestClose = useCallback(() => {
++    if (isDirty) {
++      setShowPrompt(true);
++    } else {
++      onClose();
++    }
++  }, [isDirty, onClose]);
++
++  // Esc tuşu dinleyicisi: temiz formda kapatır, kirli formda onay açar
++  useEffect(() => {
++    const handleKeyDown = (e: KeyboardEvent) => {
++      if (e.key === "Escape" && !e.defaultPrevented) {
++        e.preventDefault();
++        e.stopPropagation();
++        if (showPrompt) {
++          setShowPrompt(false);
++          return;
++        }
++        if (isDirty) {
++          setShowPrompt(true);
++        } else {
++          onClose();
++        }
++      }
++    };
++
++    document.addEventListener("keydown", handleKeyDown, true);
++    window.addEventListener("keydown", handleKeyDown, true);
++    return () => {
++      document.removeEventListener("keydown", handleKeyDown, true);
++      window.removeEventListener("keydown", handleKeyDown, true);
++    };
++  }, [isDirty, showPrompt, onClose]);
++
++  const handleDiscard = useCallback(() => {
++    setShowPrompt(false);
++    onClose();
++  }, [onClose]);
++
++  const handleCancel = useCallback(() => {
++    setShowPrompt(false);
++  }, []);
++
++  const handleSave = useCallback(async () => {
++    if (!onSave) {
++      handleDiscard();
++      return;
++    }
++    setSaving(true);
++    try {
++      const res = await onSave();
++      if (res !== false) {
++        setShowPrompt(false);
++        onClose();
++      }
++    } finally {
++      setSaving(false);
++    }
++  }, [onSave, handleDiscard, onClose]);
++
++  const guardModal = showPrompt ? (
++    <Modal
++      title={t("settings.dirty.title")}
++      description={t("settings.dirty.desc")}
++      onClose={handleCancel}
++      size="sm"
++      actions={
++        <>
++          <Button onClick={handleCancel} disabled={saving}>
++            {t("common.cancel")}
++          </Button>
++          <Button kind="danger" onClick={handleDiscard} disabled={saving}>
++            {t("settings.dirty.discard")}
++          </Button>
++          <Button kind="primary" busy={saving} onClick={() => void handleSave()} data-autofocus>
++            {t("common.save")}
++          </Button>
++        </>
++      }
++    />
++  ) : null;
++
++  return {
++    requestClose,
++    showPrompt,
++    setShowPrompt,
++    guardModal,
++  };
++}
+diff --git a/packages/tokens/scripts/build.mjs b/packages/tokens/scripts/build.mjs
+index a0acef4..4954744 100644
+--- a/packages/tokens/scripts/build.mjs
++++ b/packages/tokens/scripts/build.mjs
+@@ -30,6 +30,7 @@ const css = `${BASLIK}
+ /* Ölçüler (temadan bağımsız) */
+ :root {
+ ${blok(olcu)}
++  --field-min-height: var(--hk-field-min-height, 36px);
+ }
+ 
+ /* Varsayılan tema / şablon kipi: ${VARSAYILAN} (Yörünge) */
+diff --git a/packages/tokens/tokens.json b/packages/tokens/tokens.json
+index e82ef23..002f15e 100644
+--- a/packages/tokens/tokens.json
++++ b/packages/tokens/tokens.json
+@@ -890,6 +890,7 @@
+       "mediaMaxW": "400px",
+       "mediaMaxH": "300px"
+     },
++    "fieldMinHeight": "36px",
+     "size": {
+       "control": {
+         "sm": "28px",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index a7f88f5..8cf78c5 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -14,6 +14,9 @@ importers:
+ 
+   apps/web:
+     dependencies:
++      '@floating-ui/react':
++        specifier: ^0.27.20
++        version: 0.27.20(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+       '@radix-ui/react-dialog':
+         specifier: ^1.3.1
+         version: 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+@@ -258,6 +261,12 @@ packages:
+       react: '>=16.8.0'
+       react-dom: '>=16.8.0'
+ 
++  '@floating-ui/react@0.27.20':
++    resolution: {integrity: sha512-CMqMy7OaXl9W0eq1Uy7L7i2Y/anPvHmFmESd2CEw0t5YvZhcVCeo4MBevAmswRllX7Y2dEidA4ozGPunLSTQpw==}
++    peerDependencies:
++      react: '>=17.0.0'
++      react-dom: '>=17.0.0'
++
+   '@floating-ui/utils@0.2.12':
+     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+ 
+@@ -1728,6 +1737,9 @@ packages:
+     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
+     engines: {node: '>=18'}
+ 
++  tabbable@6.5.0:
++    resolution: {integrity: sha512-wieBHXygIm7OyQOu5hQlkk62/WyCFYGlWg7L6/ZCUZwx0o398Zkn4pVmMyfYhfMG8kGrj/Krt8eIk6UKC6VzwA==}
++
+   tagged-tag@1.0.0:
+     resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+     engines: {node: '>=20'}
+@@ -2121,6 +2133,14 @@ snapshots:
+       react: 19.3.0
+       react-dom: 19.3.0(react@19.3.0)
+ 
++  '@floating-ui/react@0.27.20(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
++    dependencies:
++      '@floating-ui/react-dom': 2.1.9(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
++      '@floating-ui/utils': 0.2.12
++      react: 19.3.0
++      react-dom: 19.3.0(react@19.3.0)
++      tabbable: 6.5.0
++
+   '@floating-ui/utils@0.2.12': {}
+ 
+   '@fontsource-variable/bricolage-grotesque@5.3.0': {}
+@@ -3416,6 +3436,8 @@ snapshots:
+ 
+   supports-color@10.2.2: {}
+ 
++  tabbable@6.5.0: {}
++
+   tagged-tag@1.0.0: {}
+ 
+   tar@7.5.22:
