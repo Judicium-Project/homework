@@ -195,7 +195,7 @@ name = "demo"
 dependencies = [
     "requests>=2.28",
     "left-pad>=1.0",
-    "evil-package==0.1",
+    "unapproved-pkg==0.1",
 ]
 
 [project.optional-dependencies]
@@ -208,7 +208,7 @@ dev = [
     code, report = check(repo, tmp_path / "c.toml", tmp_path / "out")
     assert code == 1
     unallowed = sorted(f["message"].split("'")[1] for f in findings(report, "dependency-not-allowed"))
-    assert unallowed == ["evil-package", "pytest"]
+    assert unallowed == ["pytest", "unapproved-pkg"]
 
 
 def test_pyproject_toml_non_registry_source(tmp_path: Path) -> None:
@@ -217,7 +217,7 @@ def test_pyproject_toml_non_registry_source(tmp_path: Path) -> None:
     commit_all(repo)
 
     (repo / "pyproject.toml").write_text(
-        "[project]\nname = 'x'\ndependencies = [\n    'left-pad @ git+https://github.com/evil/left-pad.git',\n]\n"
+        "[project]\nname = 'x'\ndependencies = [\n    'left-pad @ git+https://github.com/example/left-pad.git',\n]\n"
     )
     (tmp_path / "c.toml").write_text(CONTRACT)
     code, report = check(repo, tmp_path / "c.toml", tmp_path / "out")
@@ -231,11 +231,12 @@ def test_requirements_txt_unlisted_and_source(tmp_path: Path) -> None:
     commit_all(repo)
 
     (repo / "requirements.txt").write_text(
-        "requests==2.31.0\nleft-pad>=1.0\nevil-dep==1.0\nhacked @ https://evil.com/pkg.whl\n"
+        "requests==2.31.0\nleft-pad>=1.0\nunapproved-dep==1.0\npkg-tarball @ https://example.com/pkg.whl\n"
     )
     (tmp_path / "c.toml").write_text(CONTRACT)
     code, report = check(repo, tmp_path / "c.toml", tmp_path / "out")
     assert code == 1
-    assert "evil-dep" in [f["message"].split("'")[1] for f in findings(report, "dependency-not-allowed")]
+    assert "unapproved-dep" in [f["message"].split("'")[1] for f in findings(report, "dependency-not-allowed")]
     assert findings(report, "dependency-source")
+
 
