@@ -302,7 +302,6 @@ _PY_PKG_NAME = re.compile(r"^([a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?)")
 
 
 def _parse_python_requirement(raw: str) -> tuple[str, str] | None:
-    """Extract canonicalized package name and version/source spec from PEP 508 / requirements line."""
     clean = raw.split("#")[0].strip()
     if not clean or clean.startswith(("-r", "--requirement", "-c", "--constraint", "-e", "--editable")):
         return None
